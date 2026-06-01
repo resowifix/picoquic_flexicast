@@ -27,11 +27,14 @@
  * - For initial packets, has to perform version checks.
  */
 
+#include "picoquic.h"
 #include "picoquic_internal.h"
 #include "picoquic_binlog.h"
 #include "picoquic_unified_log.h"
 #include "tls_api.h"
+#include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -679,6 +682,15 @@ int picoquic_remove_header_protection(picoquic_cnx_t* cnx,
     return ret;
 }
 
+int is_in_li(picoquic_cnx_t *cnx, uint32_t n) {
+    for (size_t i = 0; i < cnx->li_to_skip->len; i++) {
+        if (cnx->li_to_skip->li[i] == n) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
 /*
  * Remove packet protection
  */
@@ -707,7 +719,7 @@ size_t picoquic_remove_packet_protection(picoquic_cnx_t* cnx,
         picoquic_ack_context_t* ack_ctx = picoquic_ack_ctx_from_cnx_context(cnx, picoquic_packet_context_application, ph->l_cid);
 
         int i = -1;
-        if (cnx->is_flexicast_enabled && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0) {
+        if (cnx->is_flexicast_enabled && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0 && !is_in_li(cnx, ph->pn)) {
             decoded = picoquic_aead_decrypt_mp(decoded_bytes+ph->offset,
                 bytes + ph->offset, ph->payload_length, 1, ph->pn64, decoded_bytes, ph->offset,
                 cnx->flows[i]->crypto_context.aead_decrypt);

@@ -1299,6 +1299,7 @@ void picoquic_stream_data_callback(picoquic_cnx_t* cnx, picoquic_stream_head_t* 
         size_t start = (size_t)(stream->consumed_offset - data->offset);
         if (data->length >= start) {
             size_t data_length = data->length - start;
+            printf("tuut %lu %lu %lu\n", stream->stream_id, MAX(data->offset, stream->consumed_offset), data_length);
             picoquic_stream_data_chunk_callback(cnx, stream, data->bytes + start, data_length);
         }
         picosplay_delete_hint(&stream->stream_data_tree, &data->stream_data_node);
@@ -1417,6 +1418,8 @@ static int picoquic_stream_network_input(picoquic_cnx_t* cnx, uint64_t stream_id
     picoquic_stream_head_t* stream;
     uint64_t new_fin_offset = offset + length;
 
+    printf("bzz %lu %lu %ld\n", stream_id, offset, length);
+
     if ((stream = picoquic_find_or_create_stream(cnx, stream_id, 1)) == NULL) {
         if (stream_id < cnx->next_stream_id[STREAM_TYPE_FROM_ID(stream_id)]) {
             return 0;
@@ -1464,6 +1467,8 @@ static int picoquic_stream_network_input(picoquic_cnx_t* cnx, uint64_t stream_id
                 /* Arrival of in sequence bytes */
                 uint64_t delivered_index = stream->consumed_offset - offset;
                 uint64_t data_length = length - delivered_index;
+
+                printf("tuut %lu %lu %lu\n", stream_id, MAX(stream->consumed_offset, offset), data_length);
 
                 /* Ugly cast, but the callback requires a non-const pointer */
                 picoquic_stream_data_chunk_callback(cnx, stream, (uint8_t *)bytes + delivered_index, (size_t)data_length);
@@ -3971,6 +3976,9 @@ const uint8_t* picoquic_decode_ack_frame(picoquic_cnx_t* cnx, const uint8_t* byt
         }
 
         if (largest >= pkt_ctx->send_sequence) {
+            if (largest == 0 && cnx->path[path_id]->receive_only_fc_flow_path){
+                return picoquic_skip_ack_frame_maybe_ecn(bytes, bytes_max, is_ecn, has_path_id);
+            }
             bytes = NULL;
             picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_PROTOCOL_VIOLATION, ftype);
         }
@@ -6811,7 +6819,7 @@ const uint8_t* picoquic_skip_fc_announce_frame(const uint8_t* bytes, const uint8
 
 const uint8_t* picoquic_decode_fc_state_frame(picoquic_cnx_t* cnx, picoquic_path_t* path_x, const uint8_t* bytes, const uint8_t* bytes_max)
 {
-    uint64_t action, sequence_number;
+    uint64_t action;//, sequence_number;
     picoquic_fc_flow_id_t flow_id;
     int i;
 
@@ -6826,8 +6834,9 @@ const uint8_t* picoquic_decode_fc_state_frame(picoquic_cnx_t* cnx, picoquic_path
         (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id.id_len)) != NULL &&
         (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id.id_len, &flow_id)) != NULL &&
         (i = picoquic_find_flow_by_fid(cnx, &flow_id)) >= 0 &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &sequence_number)) != NULL &&
-        (bytes = picoquic_frames_uint64_decode(bytes, bytes_max, &action)) != NULL
+        //(bytes = picoquic_frames_varint_decode(bytes, bytes_max, &sequence_number)) != NULL &&
+        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &action)) != NULL &&
+        (bytes = picoquic_frames_varint_skip(bytes, bytes_max))
     ) {
         switch (action) {
             case 2:
@@ -6852,8 +6861,10 @@ uint8_t * picoquic_format_fc_state_frame(uint8_t* bytes, uint8_t* bytes_max, int
         (bytes = picoquic_frames_varint_encode(bytes, bytes_max, picoquic_frame_type_fc_state)) != NULL &&
         (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, flow->flow_id.id_len)) != NULL &&
         (bytes = picoquic_frames_fc_flow_id_encode(bytes, bytes_max, &flow->flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->self_sequence_number)) != NULL &&
-        (bytes = picoquic_frames_uint64_encode(bytes, bytes_max, action)) != NULL
+        //(bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->self_sequence_number)) != NULL &&
+        //(bytes = picoquic_frames_uint64_encode(bytes, bytes_max, action)) != NULL &&
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, action)) != NULL &&
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, 1)) != NULL
  ) {
         *is_pure_ack = 0;
         flow->self_sequence_number ++;
@@ -6875,6 +6886,7 @@ const uint8_t* picoquic_skip_fc_state_frame(const uint8_t* bytes, const uint8_t*
         (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL
     ) {
         bytes = picoquic_frames_fixed_skip(bytes, bytes_max, sizeof(uint64_t));
+        // quiche : bytes = picoquic_frames_varint_skip(bytes, bytes_max);
     }
 
     return bytes;
