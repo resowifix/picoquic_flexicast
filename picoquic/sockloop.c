@@ -590,6 +590,7 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                                               &flow->source_addr, 0, UINT64_MAX);
                         cnx->path[path_index]->receive_only_fc_flow_path = 1;
                         flow->path = cnx->path[path_index];
+                        flow->path->max_ack_delay = flow->ack_delay_timer;
                     }
                     if (flow->path && flow->tree_joined == 0 &&
                         !picoquic_packet_loop_open_flexicast_socket(

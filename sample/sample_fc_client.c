@@ -560,7 +560,8 @@ void parse_packet_to_forget(char * arg, li_to_skip_t *li)
         nb += (arg[c] == ',');
     }
 
-    li->li = calloc(nb + 1, sizeof(uint32_t));
+    if ((li->li = calloc(nb + 1, sizeof(uint32_t))) == NULL)
+        exit(1);
 
     for (uint32_t pn = strtoul(arg, &end, 10);;
         pn = strtoul(arg, &end, 10)) {
