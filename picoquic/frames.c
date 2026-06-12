@@ -6916,9 +6916,10 @@ uint8_t * picoquic_format_fc_key_frame(uint8_t* bytes, uint8_t* bytes_max, int* 
     if ((bytes = picoquic_frames_varint_encode(bytes, bytes_max, picoquic_frame_type_fc_key)) != NULL &&
         (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, flow->flow_id.id_len)) != NULL &&
         (bytes = picoquic_frames_fc_flow_id_encode(bytes, bytes_max, &flow->flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->self_sequence_number)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->packet_number + 1)) != NULL &&
         (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->key_len)) != NULL &&
+        (bytes = picoquic_frames_length_data_encode(bytes, bytes_max, flow->key_len, flow->key)) != NULL &&
+        (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, (uint8_t)flow->crypto_algo)) != NULL &&
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->packet_number + 1)) != NULL &&
         bytes + flow->key_len < bytes_max
     ) {
         memcpy(bytes, flow->key, flow->key_len);

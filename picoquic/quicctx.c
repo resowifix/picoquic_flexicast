@@ -4081,6 +4081,45 @@ picoquic_cnx_t* picoquic_create_client_cnx(picoquic_quic_t* quic,
     return cnx;
 }
 
+void picoquic_set_fc_address(picoquic_quic_t* quic, struct sockaddr **addr_to)
+{
+    if (!*addr_to) {
+        *addr_to = malloc(sizeof(struct sockaddr));
+        (*(struct sockaddr_in**)addr_to)->sin_family = AF_INET;
+        (*(struct sockaddr_in**)addr_to)->sin_port = htons(4444);
+        inet_pton(AF_INET, "239.239.239.204", &(*(struct sockaddr_in**)addr_to)->sin_addr);
+    }
+}
+
+picoquic_cnx_t *picoquic_create_datagram_fc_server(picoquic_quic_t* quic,
+    picoquic_connection_id_t initial_cnx_id, picoquic_connection_id_t remote_cnx_id,
+    struct sockaddr* addr_to, uint64_t start_time, uint32_t preferred_version)
+{
+    PICOQUIC_THREAD_CHECK(quic);
+    if (picoquic_is_connection_id_null(&initial_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &initial_cnx_id, 8);
+    }
+    if (picoquic_is_connection_id_null(&remote_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &remote_cnx_id, 8);
+    }
+    picoquic_set_fc_address(quic, &addr_to);
+    picoquic_cnx_t *cnx = picoquic_create_cnx_internal(quic, initial_cnx_id, remote_cnx_id, addr_to, start_time, preferred_version,
+        NULL, NULL, 0, NULL, NULL);
+
+    cnx->nb_flows = cnx->nb_flows_alloc = 1;
+    cnx->flows = calloc(1, sizeof(picoquic_fc_flow_t *));
+    cnx->flows[0] = calloc(1, sizeof(picoquic_fc_flow_t));
+    cnx->flows[0]->flow_id.id_len = remote_cnx_id.id_len;
+    memcpy(cnx->flows[0]->flow_id.id, remote_cnx_id.id, remote_cnx_id.id_len);
+    cnx->flows[0]->udp_port = ((struct sockaddr_in *)addr_to)->sin_port;
+    memcpy(&cnx->flows[0]->group_addr, addr_to, sizeof(struct sockaddr));
+    memcpy(&cnx->flows[0]->source_addr, addr_to, sizeof(struct sockaddr));
+    
+
+
+    return cnx;
+}
+
 int picoquic_start_client_cnx(picoquic_cnx_t * cnx)
 {
     int ret = 0;
