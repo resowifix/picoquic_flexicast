@@ -6711,6 +6711,7 @@ uint8_t* picoquic_format_fc_announce_frame(uint8_t* bytes, uint8_t* bytes_max, i
  ) {
         *is_pure_ack = 0;
         flow->self_sequence_number ++;
+        flow->state = picoquic_fc_srv_aware_unjoined;
     }
     else {
         *more_data = 1;
@@ -6916,21 +6917,13 @@ uint8_t * picoquic_format_fc_key_frame(uint8_t* bytes, uint8_t* bytes_max, int* 
     if ((bytes = picoquic_frames_varint_encode(bytes, bytes_max, picoquic_frame_type_fc_key)) != NULL &&
         (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, flow->flow_id.id_len)) != NULL &&
         (bytes = picoquic_frames_fc_flow_id_encode(bytes, bytes_max, &flow->flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->key_len)) != NULL &&
         (bytes = picoquic_frames_length_data_encode(bytes, bytes_max, flow->key_len, flow->key)) != NULL &&
         (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, (uint8_t)flow->crypto_algo)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->packet_number + 1)) != NULL &&
-        bytes + flow->key_len < bytes_max
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->packet_number + 1)) != NULL
     ) {
-        memcpy(bytes, flow->key, flow->key_len);
-        if ((bytes = picoquic_frames_uint64_encode(bytes + flow->key_len, bytes_max, flow->crypto_algo)) != NULL) {
-            *is_pure_ack = 0;
-            flow->self_sequence_number ++;
-        }
-        else {
-            *more_data = 1;
-            bytes = bytes0;
-        }
+        *is_pure_ack = 0;
+        flow->self_sequence_number ++;
+        flow->state = picoquic_fc_srv_joined_w_key;
     }
     else {
         *more_data = 1;

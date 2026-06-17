@@ -671,7 +671,7 @@ int picoquic_remove_header_protection(picoquic_cnx_t* cnx,
     void * pn_enc = cnx->crypto_context[ph->epoch].pn_dec;
 
     int i = -1 ;
-    if (cnx->is_flexicast_enabled && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0) {
+    if (cnx->is_flexicast_enabled && ph->l_cid != NULL && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0) {
         pn_enc = cnx->flows[i]->crypto_context.pn_dec;
     }
 

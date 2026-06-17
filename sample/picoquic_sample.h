@@ -28,7 +28,7 @@
 extern "C" {
 #endif
 
-#define PICOQUIC_SAMPLE_ALPN "picoquic_sample"
+#define PICOQUIC_SAMPLE_ALPN "h3"
 #define PICOQUIC_SAMPLE_SNI "test.example.com"
 
 #define PICOQUIC_SAMPLE_NO_ERROR 0

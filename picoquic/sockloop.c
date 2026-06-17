@@ -371,6 +371,7 @@ int picoquic_packet_loop_open_socket(picoquic_packet_loop_param_t* param,
     int recv_set = 0;
     int send_set = 0;
     int opt_val = 1;
+    int ttl = 64;
 #ifdef _WINDOWS
     int recv_coalesced = 0;
     int send_coalesced = 0;
@@ -402,6 +403,7 @@ int picoquic_packet_loop_open_socket(picoquic_packet_loop_param_t* param,
         (s_ctx->is_port_shared && (setsockopt(s_ctx->fd, SOL_SOCKET, SO_REUSEPORT,
                                   (const char*)&opt_val, sizeof(opt_val)) != 0)) ||
 #endif
+        (setsockopt(s_ctx->fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) ||
         picoquic_bind_to_port(s_ctx->fd,s_ctx->af, s_ctx->port) != 0 ||
         picoquic_get_local_address(s_ctx->fd, &local_address) != 0 ||
         picoquic_socket_set_pmtud_options(s_ctx->fd, s_ctx->af) != 0)
@@ -539,7 +541,7 @@ int picoquic_join_multicast_tree(picoquic_fc_flow_t *flow, picoquic_socket_ctx_t
 }
 
 int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can_be_shared,
-    int socket_buffer_size, int extra_socket_required, int do_not_use_gso, picoquic_socket_ctx_t* s_ctx, uint8_t ecn_value)
+    picoquic_packet_loop_param_t* param, picoquic_socket_ctx_t* s_ctx, uint8_t ecn_value)
 {
     /* Compute how many sockets are necessary, and set the intial value of AF and port per socket */
     int sock_ret = 0;
@@ -548,7 +550,7 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
     s_ctx->port = flow->udp_port;
     s_ctx->n_port = htons(flow->udp_port);
     s_ctx->is_port_shared = 0;
-    if ((sock_ret = picoquic_packet_loop_open_socket(socket_buffer_size, do_not_use_gso, s_ctx, ecn_value)) == 0) {
+    if ((sock_ret = picoquic_packet_loop_open_socket(param, s_ctx, ecn_value)) == 0) {
         if (picoquic_is_flexicast_address(&flow->group_addr)) {
             if (!picoquic_join_multicast_tree(flow, s_ctx))
                 return 0;
@@ -557,7 +559,7 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
     }
     if (sock_ret == 0 && can_be_shared != 0) {
         s_ctx->is_port_shared = (can_be_shared != 0);
-        if ((sock_ret = picoquic_packet_loop_open_socket(socket_buffer_size, do_not_use_gso, s_ctx, ecn_value)) == 0) {
+        if ((sock_ret = picoquic_packet_loop_open_socket(param, s_ctx, ecn_value)) == 0) {
             if (picoquic_is_flexicast_address(&flow->group_addr)) {
                 if (!picoquic_join_multicast_tree(flow, s_ctx))
                     return 0;
@@ -596,9 +598,7 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                                 :
                                     ((struct sockaddr_in6 *)&flow->unicast_addr)->sin6_port
                             ) || flow->udp_port <= 1000,
-                            param->socket_buffer_size,
-                            0,
-                            param->do_not_use_gso,
+                            param,
                             &s_ctx[*nb_sockets],
                             ecn_value
                         )
