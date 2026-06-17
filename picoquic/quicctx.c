@@ -4140,7 +4140,10 @@ picoquic_cnx_t *picoquic_create_datagram_fc_server(picoquic_quic_t* quic,
     cnx->remote_parameters.max_datagram_frame_size = cnx->local_parameters.max_datagram_frame_size = PICOQUIC_MAX_PACKET_SIZE;
     cnx->path[0]->unique_path_id = 1;
     cnx->is_multipath_enabled = 1;
-    
+
+    picoquic_disable_keep_alive(cnx);
+    picoquic_cnx_set_pmtud_policy(cnx, picoquic_pmtud_blocked);
+
     quic->flexicast_cnx = cnx;
 
     return cnx;
