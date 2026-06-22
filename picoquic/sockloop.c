@@ -575,8 +575,7 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
 void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t* s_ctx, int *nb_sockets, uint8_t ecn_value, uint64_t current_time)
 {
     if (quic->current_number_connections > 0) {
-        for (int i = 0; i < quic->current_number_connections; i++) {
-            picoquic_cnx_t *cnx = &quic->cnx_list[i];
+        for (picoquic_cnx_t *cnx = quic->cnx_list; cnx != NULL; cnx = cnx->next_in_table) {
             if (cnx->is_flexicast_enabled && cnx->need_flow_update &&
                 cnx->nb_flows > 0) {
                 for (int j = 0; j < cnx->nb_flows; j++) {

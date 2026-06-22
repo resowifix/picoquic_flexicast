@@ -166,7 +166,7 @@ int sample_server_fc_callback(picoquic_cnx_t* cnx,
  * - The loop breaks if the socket return an error. 
  */
 
-int picoquic_sample_server(int server_port, const char* server_cert, const char* server_key, const char* default_dir)
+int picoquic_sample_server_fc(int server_port, const char* server_cert, const char* server_key, const char* default_dir, const char* fc_src_ip)
 {
     /* Start: start the QUIC process with cert and key files */
     int ret = 0;
@@ -201,6 +201,7 @@ int picoquic_sample_server(int server_port, const char* server_cert, const char*
         picoquic_set_default_multipath_option(quic, 1);
         picoquic_set_default_flexicast_option(quic, 1);
         picoquic_enable_sslkeylog(quic, 1);
+        picoquic_set_key_log_file_from_env(quic);
         picoquic_set_default_lossbit_policy(quic, 0);
     }
 
@@ -214,12 +215,17 @@ int picoquic_sample_server(int server_port, const char* server_cert, const char*
      * still, get the faulty driver fixed.
      */
     if (ret == 0) {
-        struct sockaddr_in flexicast_address;
+        struct sockaddr_in flexicast_address, src_addr;
+        memset(&flexicast_address, 0, sizeof(struct sockaddr_in));
+        memset(&src_addr, 0, sizeof(struct sockaddr_in));
         flexicast_address.sin_family = AF_INET;
         flexicast_address.sin_port = htons(4444);
         inet_pton(AF_INET, "239.239.239.35", &flexicast_address.sin_addr);
+        src_addr.sin_family = AF_INET;
+        src_addr.sin_port = htons(server_port);
+        inet_pton(AF_INET, fc_src_ip, &src_addr.sin_addr);
         picoquic_cnx_t *cnx = picoquic_create_datagram_fc_server(quic, picoquic_null_connection_id, picoquic_null_connection_id,
-            (struct sockaddr*)&flexicast_address, current_time, 0, sample_server_fc_callback);
+            (struct sockaddr*)&flexicast_address, (struct sockaddr*)&src_addr, current_time, 0, sample_server_fc_callback);
 
             printf("pt %p\n", &cnx->flows[0]->flow_id);
 
@@ -262,7 +268,7 @@ int picoquic_sample_server(int server_port, const char* server_cert, const char*
 static void usage(char const * sample_name)
 {
     fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "    %s port cert_file private_key_file folder\n", sample_name);
+    fprintf(stderr, "    %s port cert_file private_key_file folder fc_source_ip\n", sample_name);
     exit(1);
 }
 
@@ -285,9 +291,9 @@ int main(int argc, char** argv)
     (void)WSA_START(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    if (argc == 5) {
+    if (argc == 6) {
         int server_port = get_port(argv[0], argv[1]);
-        exit_code = picoquic_sample_server(server_port, argv[2], argv[3], argv[4]);
+        exit_code = picoquic_sample_server_fc(server_port, argv[2], argv[3], argv[4], argv[5]);
     }
     else {
         usage(argv[0]);
