@@ -539,7 +539,7 @@ int picoquic_join_multicast_tree(picoquic_fc_flow_t *flow, picoquic_socket_ctx_t
 }
 
 int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can_be_shared,
-    picoquic_packet_loop_param_t* param, picoquic_socket_ctx_t* s_ctx, uint8_t ecn_value)
+    picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t* s_ctx, uint8_t ecn_value)
 {
     /* Compute how many sockets are necessary, and set the intial value of AF and port per socket */
     int sock_ret = 0;
@@ -573,10 +573,10 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
 void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t* s_ctx, int *nb_sockets, uint8_t ecn_value, uint64_t current_time)
 {
     if (quic->current_number_connections > 0) {
-        for (int i = 0; i < quic->current_number_connections; i++) {
-            picoquic_cnx_t *cnx = &quic->cnx_list[i];
+        for (picoquic_cnx_t *cnx = quic->cnx_list; cnx != NULL; cnx = cnx->next_in_table) {
             if (cnx->is_flexicast_enabled && cnx->need_flow_update &&
                 cnx->nb_flows > 0) {
+                cnx->need_flow_update = 0;
                 for (int j = 0; j < cnx->nb_flows; j++) {
                     picoquic_fc_flow_t *flow = cnx->flows[j];
                     if (flow->path == NULL && cnx->nb_paths < cnx->nb_local_cnxid_lists) {
@@ -584,9 +584,8 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                                               &flow->source_addr, 0, UINT64_MAX);
                         cnx->path[path_index]->receive_only_fc_flow_path = 1;
                         flow->path = cnx->path[path_index];
-                        flow->path->max_ack_delay = flow->ack_delay_timer;
                     }
-                    if (flow->path && flow->tree_joined == 0 &&
+                    if (flow->path && flow->state == picoquic_fc_cli_aware_unjoined &&
                         !picoquic_packet_loop_open_flexicast_socket(
                             flow,
                             flow->udp_port ==
@@ -603,9 +602,9 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                     ) {
                         flow->s_ctx_i = *nb_sockets;
                         (*nb_sockets)++;
-                        flow->tree_joined = 1;
+                        flow->state = picoquic_fc_cli_aware_unjoined_socket_ready;
                     }
-                    if (flow->left) {
+                    if (flow->state == picoquic_fc_cli_left) {
                         picoquic_packet_loop_close_socket(&s_ctx[flow->s_ctx_i]);
                     }
                 }
