@@ -10,7 +10,8 @@
 
 #define PICOQUIC_FC_ACTION_JOIN 0x01
 #define PICOQUIC_FC_ACTION_LEAVE 0x02
-#define PICOQUIC_FC_ACTION_LISTEN 0x03
+#define PICOQUIC_FC_ACTION_LISTEN 0x04
+#define PICOQUIC_FC_ACTION_SYNC 0x06
 
 int picoquic_compare_flow_id(picoquic_fc_flow_id_t *flow_id_1,
                              picoquic_fc_flow_id_t *flow_id_2)
@@ -180,8 +181,8 @@ uint8_t *picoquic_manage_fc_cnx_frames(
     return bytes_next;
 }
 
-int picoquic_fc_state_frame_needs_repeat(picoquic_cnx_t* cnx, const uint8_t* bytes,
-    const uint8_t* bytes_max, int* no_need_to_repeat)
+int picoquic_fc_state_frame_needs_repeat(picoquic_cnx_t *cnx, const uint8_t *bytes,
+    const uint8_t *bytes_max, int *no_need_to_repeat)
 {
     int ret = 0;
     uint64_t action = 0;
@@ -230,7 +231,7 @@ int picoquic_is_flexicast_address(struct sockaddr *addr)
     return 0;
 }
 
-uint8_t* picoquic_format_fc_leave_state_frames(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack)
+uint8_t *picoquic_format_fc_leave_state_frames(picoquic_cnx_t *cnx, uint8_t *bytes, uint8_t *bytes_max, int *more_data, int *is_pure_ack)
 {
     return bytes;
     if (cnx->is_flexicast_enabled) {
@@ -248,4 +249,25 @@ uint8_t* picoquic_format_fc_leave_state_frames(picoquic_cnx_t* cnx, uint8_t* byt
         }
     }
     return bytes;
+}
+
+void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t action, uint64_t action_data, uint64_t current_time)
+{
+    picoquic_fc_flow_t *flow = cnx->flows[flow_index];
+
+    switch (action) {
+    case PICOQUIC_FC_ACTION_JOIN:
+    break;
+    case PICOQUIC_FC_ACTION_LEAVE:
+        flow->leave_required = 1;
+        cnx->need_flow_update = 1;
+    break;
+    case PICOQUIC_FC_ACTION_LISTEN:
+    break;
+    case PICOQUIC_FC_ACTION_SYNC:
+        picoquic_update_sack_list(&flow->path->ack_ctx.sack_list, action_data, action_data, current_time);
+    break;
+    default:
+    break;
+    }
 }

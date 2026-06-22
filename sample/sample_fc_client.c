@@ -48,6 +48,7 @@
 #include <picoquic_packet_loop.h>
 #include <stdlib.h>
 #include <string.h>
+#include "picoquic_internal.h"
 #include "picoquic_sample_fc.h"
 #include "picoquic_bbr.h"
 
@@ -167,10 +168,6 @@ int sample_client_callback_fc(picoquic_cnx_t* cnx,
     uint64_t stream_id, uint8_t* bytes, size_t length,
     picoquic_call_back_event_t fin_or_event, void* callback_ctx, void* v_stream_ctx)
 {
-    printf("New : %lu, %lu, %p\n", length, stream_id, v_stream_ctx);
-    if (length>1) {
-        printf("%.2x %.2x\n", bytes[0], bytes[1]);
-    }
     int ret = 0;
     sample_client_ctx_t* client_ctx = (sample_client_ctx_t*)callback_ctx;
     sample_client_stream_ctx_t* stream_ctx = (sample_client_stream_ctx_t*)v_stream_ctx;
@@ -201,7 +198,6 @@ int sample_client_callback_fc(picoquic_cnx_t* cnx,
             else
             {
                 if (stream_ctx->F == NULL) {
-                    printf("open\n\n");
                     /* Open the file to receive the data. This is done at the last possible moment,
                      * to minimize the number of files open simultaneously.
                      * When formatting the file_path, verify that the directory name is zero-length,
@@ -242,7 +238,6 @@ int sample_client_callback_fc(picoquic_cnx_t* cnx,
 
                 if (ret == 0 && length > 0) {
                     /* write the received bytes to the file */
-                    printf("write\n\n");
                     if (fwrite(bytes, length, 1, stream_ctx->F) != 1) {
                         /* Could not write file to disk */
                         fprintf(stderr, "Could not write data to disk.\n");
@@ -387,7 +382,7 @@ static int sample_client_init(char const* server_name, int server_port, char con
 {
     int ret = 0;
     char const* sni = PICOQUIC_SAMPLE_SNI;
-    char const* qlog_dir = PICOQUIC_SAMPLE_CLIENT_QLOG_DIR;
+    char const* qlog_dir = default_dir;
     uint64_t current_time = picoquic_current_time();
 
     *quic = NULL;
@@ -498,7 +493,7 @@ static int sample_client_init(char const* server_name, int server_port, char con
  * - The loop breaks if the client connection is finished.
  */
 
-int picoquic_sample_client_fc(char const * server_name, int server_port, char const * default_dir, int nb_file, int flexicast_option)
+int picoquic_sample_client_fc(char const * server_name, int server_port, char const * default_dir, int nb_file, li_to_skip_t *li_to_skip)
 {
     int ret = 0;
     struct sockaddr_storage server_address;
@@ -512,7 +507,9 @@ int picoquic_sample_client_fc(char const * server_name, int server_port, char co
 
     ret = sample_client_init(server_name, server_port, default_dir,
         ticket_store_filename, token_store_filename,
-        &server_address, &quic, &cnx, &client_ctx, flexicast_option);
+        &server_address, &quic, &cnx, &client_ctx, 1);
+
+    cnx->li_to_skip = li_to_skip;
 
     /* Wait for packets */
     ret = picoquic_packet_loop(quic, 0, server_address.ss_family, 0, 0, 0, sample_client_loop_cb, &client_ctx);
@@ -555,6 +552,35 @@ int get_port_fc(char const* sample_name, char const* port_arg)
     return server_port;
 }
 
+void parse_packet_to_forget(char * arg, li_to_skip_t *li)
+{
+    char *end = NULL;
+    size_t nb = 0;
+    for (size_t c = 0; arg[c]; c++) {
+        nb += (arg[c] == ',');
+    }
+
+    if ((li->li = calloc(nb + 1, sizeof(uint32_t))) == NULL)
+        exit(1);
+
+    for (uint32_t pn = strtoul(arg, &end, 10);;
+        pn = strtoul(arg, &end, 10)) {
+        if (arg != end) {
+            li->li[li->len++] = pn;
+            if (*end == ',') {
+                arg = end + 1;
+            }
+            else {
+                break;
+            }
+        }
+        else {
+            break;
+        }
+        
+    }
+}
+
 int main(int argc, char** argv)
 {
     int exit_code = 0;
@@ -563,13 +589,33 @@ int main(int argc, char** argv)
     (void)WSA_START(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    if (argc != 6) {
-        usage(argv[0]);
+    li_to_skip_t li = {0, NULL};
+    int server_port;
+
+    if (argc == 5) {
+        server_port = get_port_fc(argv[0], argv[2]);
+
+        exit_code = picoquic_sample_client_fc(argv[1], server_port, argv[3], atoi(argv[4]), &li);
+    }
+    else if (argc == 6) {
+        server_port = get_port_fc(argv[0], argv[2]);
+
+        parse_packet_to_forget(argv[5], &li);
+
+        printf("nb %ld :", li.len);
+        for (int i = 0; i<li.len; i++) {
+            printf(" %u", li.li[i]);
+        }
+        printf("\n");
+
+        exit_code = picoquic_sample_client_fc(argv[1], server_port, argv[3], atoi(argv[4]), &li);
     }
     else {
-        int server_port = get_port_fc(argv[0], argv[2]);
+        usage(argv[0]);
+    }
 
-        exit_code = picoquic_sample_client_fc(argv[1], server_port, argv[3], atoi(argv[4]), atoi(argv[5]));
+    if (li.li) {
+        free(li.li);
     }
 
     exit(exit_code);

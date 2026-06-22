@@ -1309,10 +1309,16 @@ typedef struct st_picoquic_fc_flow_t {
     picoquic_crypto_context_t crypto_context;
 } picoquic_fc_flow_t;
 
+typedef struct st_li_to_skip_t {
+    size_t len;
+    uint32_t *li;
+} li_to_skip_t;
+
 /*
 * Per connection context.
 */
 typedef struct st_picoquic_cnx_t {
+    li_to_skip_t *li_to_skip;
     picoquic_quic_t* quic;
 
     /* Management of context retrieval tables */

@@ -533,7 +533,7 @@ const uint8_t* qlog_frame_fc_state(FILE* f, const uint8_t* bytes, const uint8_t*
     if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id_len)) != NULL &&
         (bytes = qlog_frame_hex_string(f, bytes, bytes_max, flow_id_len)) != NULL &&
         (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &seq)) != NULL &&
-        (bytes = picoquic_frames_uint64_decode(bytes, bytes_max, &action)) != NULL
+        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &action)) != NULL
     ) {
         fprintf(f, ", \"sequence_number\": %"PRIu64", \"action_number\": %"PRIu64, seq, action);
     }
@@ -542,20 +542,20 @@ const uint8_t* qlog_frame_fc_state(FILE* f, const uint8_t* bytes, const uint8_t*
 
 const uint8_t* qlog_frame_fc_key(FILE* f, const uint8_t* bytes, const uint8_t* bytes_max)
 {
-    uint64_t seq, pn, k_len, algo;
-    uint8_t flow_id_len;
+    uint64_t /*seq,*/ pn, k_len;
+    uint8_t flow_id_len, algo;
 
     fprintf(f, ", \"flow_id\": ");
     if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id_len)) != NULL &&
         (bytes = qlog_frame_hex_string(f, bytes, bytes_max, flow_id_len)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &seq)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &pn)) != NULL &&
+        //(bytes = picoquic_frames_varint_decode(bytes, bytes_max, &seq)) != NULL &&
         (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &k_len)) != NULL &&
-        fprintf(f, ", \"sequence_number\": %"PRIu64", \"packet_number\": %"PRIu64", \"key\": ", seq, pn) >= 0 &&
+        //fprintf(f, ", \"sequence_number\": %"PRIu64", \"packet_number\": %"PRIu64", \"key\": ", seq, pn) >= 0 &&
         (bytes = qlog_frame_hex_string(f, bytes, bytes_max, k_len)) != NULL &&
-        (bytes = picoquic_frames_uint64_decode(bytes, bytes_max, &algo)) != NULL
+        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &algo)) != NULL &&
+        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &pn)) != NULL
     ) {
-        fprintf(f, ", \"algorithm\": %"PRIu64, algo);
+        fprintf(f, ", \"algorithm\": %u", algo);
     }
     return bytes;
 }

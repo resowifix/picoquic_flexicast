@@ -2072,6 +2072,11 @@ void picoquic_delete_abandoned_paths(picoquic_cnx_t* cnx, uint64_t current_time,
         path_index_good = 0;
         path_index_current = 0;
     }
+    
+    if (cnx->is_flexicast_enabled && cnx->nb_paths > 1 && cnx->path[1]->receive_only_fc_flow_path) {
+        path_index_good = 2;
+        path_index_current = 2;
+    }
 
     while (path_index_current < cnx->nb_paths) {
         /* Demote the path if marked for demotion */
@@ -2172,7 +2177,7 @@ void picoquic_demote_path(picoquic_cnx_t* cnx, int path_index, uint64_t current_
             if (path_index == 0) {
                 int alt_path0 = 0;
                 for (int i = 1; i < cnx->nb_paths; i++) {
-                    if (cnx->path[i]->first_tuple->p_remote_cnxid != NULL) {
+                    if (cnx->path[i]->first_tuple->p_remote_cnxid != NULL && !cnx->path[i]->receive_only_fc_flow_path) {
                         alt_path0 = i;
                         break;
                     }
