@@ -120,6 +120,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
     uint8_t *prev_bytes = bytes_next;
 
     for (int i = 0; i < cnx->nb_flows; i++) {
+        printf("state %.2x : %d", cnx->initial_cnxid.id[0], cnx->flows[i]->state);
         switch (cnx->flows[i]->state) {
         case picoquic_fc_cli_unaware:
             break;
