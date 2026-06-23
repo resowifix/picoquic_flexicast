@@ -128,7 +128,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
         case picoquic_fc_cli_aware_unjoined_socket_ready:
             bytes_next = picoquic_format_fc_state_frame(bytes_next, bytes_max, more_data,
                 is_pure_ack, cnx->flows[i], PICOQUIC_FC_ACTION_JOIN);
-            if (prev_bytes > bytes_next) {
+            if (prev_bytes < bytes_next) {
                 cnx->flows[i]->state = picoquic_fc_cli_joined_no_key;
                 prev_bytes = bytes_next;
             }
@@ -138,7 +138,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
         case picoquic_fc_cli_joined_w_key:
             bytes_next = picoquic_format_fc_state_frame(bytes_next, bytes_max, more_data,
                 is_pure_ack, cnx->flows[i], PICOQUIC_FC_ACTION_LISTEN);
-            if (prev_bytes > bytes_next) {
+            if (prev_bytes < bytes_next) {
                 cnx->flows[i]->state = picoquic_fc_cli_listening;
                 prev_bytes = bytes_next;
             }
@@ -148,7 +148,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
         case picoquic_fc_cli_leaving:
             bytes_next = picoquic_format_fc_state_frame(bytes_next, bytes_max, more_data,
                 is_pure_ack, cnx->flows[i], PICOQUIC_FC_ACTION_LEAVE);
-            if (prev_bytes > bytes_next) {
+            if (prev_bytes < bytes_next) {
                 cnx->flows[i]->state = picoquic_fc_cli_left;
                 cnx->need_flow_update = 1;
                 prev_bytes = bytes_next;
@@ -158,7 +158,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
             break;
         case picoquic_fc_srv_unaware:
             bytes_next = picoquic_format_fc_announce_frame(bytes_next, bytes_max, more_data, is_pure_ack, cnx->flows[i]);
-            if (prev_bytes > bytes_next) {
+            if (prev_bytes < bytes_next) {
                 cnx->flows[i]->state = picoquic_fc_srv_aware_unjoined;
                 prev_bytes = bytes_next;
             }
@@ -166,7 +166,7 @@ uint8_t *picoquic_manage_fc_cnx_frames(
             break;
         case picoquic_fc_srv_joined_no_key:
             bytes_next = picoquic_format_fc_key_frame(bytes_next, bytes_max, more_data, is_pure_ack, cnx->flows[i]);
-            if (prev_bytes > bytes_next) {
+            if (prev_bytes < bytes_next) {
                 cnx->flows[i]->state = picoquic_fc_cli_joined_w_key;
                 prev_bytes = bytes_next;
             }
@@ -259,7 +259,12 @@ void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t
     case PICOQUIC_FC_ACTION_JOIN:
     break;
     case PICOQUIC_FC_ACTION_LEAVE:
-        flow->leave_required = 1;
+        if (picoquic_fc_cli_unaware < flow->state && flow->state < picoquic_fc_srv_unaware) {
+            flow->state = picoquic_fc_cli_left;
+        }
+        else if (picoquic_fc_srv_unaware < flow->state && flow->state <= picoquic_fc_srv_left) {
+            flow->state = picoquic_fc_srv_left;
+        }
         cnx->need_flow_update = 1;
     break;
     case PICOQUIC_FC_ACTION_LISTEN:
