@@ -2891,8 +2891,8 @@ int picoquic_prepare_packet_ready(picoquic_cnx_t* cnx, picoquic_path_t* path_x, 
             bytes_next, bytes_max,
             &more_data, &is_pure_ack, &is_challenge_padding_needed,
             current_time, next_wake_time);
-        
-        bytes_next = picoquic_prepare_fc_state_frames(cnx, path_x,
+
+         bytes_next = picoquic_manage_fc_cnx_frames(cnx, path_x,
             bytes_next, bytes_max,
             &more_data, &is_pure_ack, &is_challenge_padding_needed,
             current_time, next_wake_time);
@@ -3810,13 +3810,7 @@ int picoquic_prepare_next_packet_ex(picoquic_quic_t* quic,
                     (int)cnx->path[0]->max_reorder_gap, (int)cnx->path[0]->max_spurious_rtt,
                     (cnx->nb_trains_sent > 0) ? ((double)cnx->nb_packets_sent / (double)cnx->nb_trains_sent) : 0.0);
 
-                if (quic->F_log != NULL) {
-                    fflush(quic->F_log);
-                }
-
-                if (cnx->f_binlog != NULL) {
-                    fflush(cnx->f_binlog);
-                }
+                picoquic_log_flush(cnx);
 
                 if (cnx->client_mode) {
                     /* Do not unilaterally delete the connection context, as it was set by the application */
