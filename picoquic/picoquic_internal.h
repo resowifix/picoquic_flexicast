@@ -626,6 +626,8 @@ typedef struct st_picoquic_quic_t {
     picohash_table* table_cnx_by_secret;
     picohash_table* table_cnx_by_socket_id; /* used for QMux */
 
+    picoquic_cnx_t* flexicast_cnx;
+
     picohash_table* table_issued_tickets;
     picoquic_issued_ticket_t* table_issued_tickets_first;
     picoquic_issued_ticket_t* table_issued_tickets_last;
@@ -1237,6 +1239,8 @@ typedef struct st_picoquic_fc_flow_t {
     uint64_t key_len;
     uint8_t* key;
     int s_ctx_i;
+
+    picoquic_fc_state state;
 
     picoquic_fc_state state;
 

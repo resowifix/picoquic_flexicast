@@ -371,6 +371,7 @@ int picoquic_packet_loop_open_socket(picoquic_packet_loop_param_t* param,
     int recv_set = 0;
     int send_set = 0;
     int opt_val = 1;
+    int ttl = 64;
 #ifdef _WINDOWS
     int recv_coalesced = 0;
     int send_coalesced = 0;
@@ -402,6 +403,7 @@ int picoquic_packet_loop_open_socket(picoquic_packet_loop_param_t* param,
         (s_ctx->is_port_shared && (setsockopt(s_ctx->fd, SOL_SOCKET, SO_REUSEPORT,
                                   (const char*)&opt_val, sizeof(opt_val)) != 0)) ||
 #endif
+        (setsockopt(s_ctx->fd, IPPROTO_IP, IP_MULTICAST_TTL, &ttl, sizeof(ttl)) < 0) ||
         picoquic_bind_to_port(s_ctx->fd,s_ctx->af, s_ctx->port) != 0 ||
         picoquic_get_local_address(s_ctx->fd, &local_address) != 0 ||
         picoquic_socket_set_pmtud_options(s_ctx->fd, s_ctx->af) != 0)
