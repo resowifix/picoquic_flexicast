@@ -687,6 +687,8 @@ typedef struct st_picoquic_quic_t {
     picohash_table* table_cnx_by_secret;
     picohash_table* table_cnx_by_socket_id; /* used for QMux */
 
+    picoquic_cnx_t* flexicast_cnx;
+
     picohash_table* table_issued_tickets;
     picoquic_issued_ticket_t* table_issued_tickets_first;
     picoquic_issued_ticket_t* table_issued_tickets_last;
@@ -1306,6 +1308,8 @@ typedef struct st_picoquic_fc_flow_t {
 
     picoquic_fc_state state;
 
+    picoquic_fc_state state;
+
     picoquic_crypto_context_t crypto_context;
 } picoquic_fc_flow_t;
 
@@ -1721,6 +1725,7 @@ uint8_t* picoquic_prepare_path_challenge_frames(picoquic_cnx_t* cnx, picoquic_pa
 uint8_t *picoquic_manage_fc_cnx_frames(picoquic_cnx_t *cnx, picoquic_path_t *path_x,
     uint8_t *bytes_next, uint8_t *bytes_max, int *more_data, int *is_pure_ack,
     int *is_challenge_padding_needed, uint64_t current_time, uint64_t *next_wake_time);
+void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t action, uint64_t action_data, uint64_t current_time);
 void picoquic_select_next_path_tuple(picoquic_cnx_t* cnx, uint64_t current_time, uint64_t* next_wake_time,
     picoquic_path_t** next_path, picoquic_tuple_t** next_tuple);
 int picoquic_renew_connection_id(picoquic_cnx_t* cnx, int path_id);

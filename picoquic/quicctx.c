@@ -3976,6 +3976,17 @@ picoquic_cnx_t* picoquic_create_cnx_internal(picoquic_quic_t* quic,
         if (cnx->congestion_alg != NULL) {
             cnx->congestion_alg->alg_init(cnx->path[0], cnx->congestion_alg_option_string, start_time);
         }
+
+        if (quic->default_flexicast_option && quic->flexicast_cnx) {
+            cnx->flows = malloc(sizeof(picoquic_fc_flow_t*));
+            cnx->flows[0] = malloc(sizeof(picoquic_fc_flow_t));
+            memcpy(cnx->flows[0], quic->flexicast_cnx->flows[0], sizeof(picoquic_fc_flow_t));
+            cnx->flows[0]->key = malloc(cnx->flows[0]->key_len);
+            memcpy(cnx->flows[0]->key, quic->flexicast_cnx->flows[0]->key, cnx->flows[0]->key_len);
+            cnx->flows[0]->state = picoquic_fc_srv_unaware;
+            cnx->nb_flows = 1;
+            cnx->nb_flows_alloc = 1;
+        }
     }
 
     /* Only initialize TLS after all parameters have been set */
@@ -4070,6 +4081,65 @@ picoquic_cnx_t* picoquic_create_client_cnx(picoquic_quic_t* quic,
             cnx = NULL;
         }
     }
+
+    return cnx;
+}
+
+void picoquic_set_fc_address(picoquic_quic_t* quic, struct sockaddr **addr_to)
+{
+    if (!*addr_to) {
+        *addr_to = malloc(sizeof(struct sockaddr));
+        (*(struct sockaddr_in**)addr_to)->sin_family = AF_INET;
+        (*(struct sockaddr_in**)addr_to)->sin_port = htons(4444);
+        inet_pton(AF_INET, "239.239.239.204", &(*(struct sockaddr_in**)addr_to)->sin_addr);
+    }
+}
+
+picoquic_cnx_t *picoquic_create_datagram_fc_server(picoquic_quic_t* quic,
+    picoquic_connection_id_t initial_cnx_id, picoquic_connection_id_t remote_cnx_id,
+    struct sockaddr* addr_to, struct sockaddr* src_addr, uint64_t start_time, uint32_t preferred_version, picoquic_stream_data_cb_fn f)
+{
+    PICOQUIC_THREAD_CHECK(quic);
+    if (picoquic_is_connection_id_null(&initial_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &initial_cnx_id, 16);
+    }
+    if (picoquic_is_connection_id_null(&remote_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &remote_cnx_id, 16);
+    }
+    picoquic_set_fc_address(quic, &addr_to);
+    picoquic_cnx_t *cnx = picoquic_create_cnx_internal(quic, initial_cnx_id, remote_cnx_id, addr_to, start_time, preferred_version,
+        NULL, NULL, 0, NULL, NULL);
+
+    cnx->nb_flows = cnx->nb_flows_alloc = 1;
+    cnx->flows = calloc(1, sizeof(picoquic_fc_flow_t *));
+    cnx->flows[0] = calloc(1, sizeof(picoquic_fc_flow_t));
+    cnx->flows[0]->flow_id.id_len = remote_cnx_id.id_len;
+    memcpy(cnx->flows[0]->flow_id.id, remote_cnx_id.id, remote_cnx_id.id_len);
+    cnx->flows[0]->udp_port = ntohs(((struct sockaddr_in *)addr_to)->sin_port);
+    memcpy(&cnx->flows[0]->group_addr, addr_to, sizeof(struct sockaddr));
+    memcpy(&cnx->flows[0]->source_addr, src_addr, sizeof(struct sockaddr));
+    cnx->flows[0]->key_len = 32;
+    cnx->flows[0]->key = malloc(cnx->flows[0]->key_len);
+    picoquic_crypto_random(quic, cnx->flows[0]->key, cnx->flows[0]->key_len);
+    cnx->flows[0]->crypto_algo = 0;
+    ptls_cipher_suite_t* algo = picoquic_get_cipher_suite_by_id_v(cnx->flows[0]->crypto_algo, cnx->quic->use_low_memory);
+    const char *prefix_label = picoquic_supported_versions[cnx->version_index].tls_prefix_label;
+    
+    picoquic_set_fc_encryption_from_secret(algo, &cnx->crypto_context[picoquic_epoch_1rtt], cnx->flows[0]->key, prefix_label);
+    picoquic_set_fc_decryption_from_secret(algo, &cnx->crypto_context[picoquic_epoch_1rtt], cnx->flows[0]->key, prefix_label);
+    cnx->cnx_state = picoquic_state_ready;
+    cnx->idle_timeout = cnx->crypto_epoch_length_max = UINT64_MAX;
+
+    cnx->callback_fn = f;
+    cnx->app_wake_time = start_time + 10;
+    cnx->remote_parameters.max_datagram_frame_size = cnx->local_parameters.max_datagram_frame_size = PICOQUIC_MAX_PACKET_SIZE;
+    cnx->path[0]->unique_path_id = 1;
+    cnx->is_multipath_enabled = 1;
+
+    picoquic_disable_keep_alive(cnx);
+    picoquic_cnx_set_pmtud_policy(cnx, picoquic_pmtud_blocked);
+
+    quic->flexicast_cnx = cnx;
 
     return cnx;
 }

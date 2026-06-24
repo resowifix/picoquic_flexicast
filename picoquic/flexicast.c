@@ -181,6 +181,42 @@ uint8_t *picoquic_manage_fc_cnx_frames(
     return bytes_next;
 }
 
+uint8_t *picoquic_manage_fc_cnx_frames(
+    picoquic_cnx_t *cnx, picoquic_path_t *path_x, uint8_t *bytes_next,
+    uint8_t *bytes_max, int *more_data, int *is_pure_ack,
+    int *is_challenge_padding_needed, uint64_t current_time,
+    uint64_t *next_wake_time)
+{
+    if (!cnx->is_flexicast_enabled)
+        return bytes_next;
+
+    for (int i = 0; i < cnx->nb_flows; i++) {
+        switch (cnx->flows[i]->state) {
+        case picoquic_fc_cli_unaware:
+        case picoquic_fc_cli_aware_unjoined:
+        case picoquic_fc_cli_joined_no_key:
+        case picoquic_fc_cli_joined_w_key:
+        case picoquic_fc_cli_listening:
+        case picoquic_fc_cli_leaving:
+        case picoquic_fc_cli_left:
+            break;
+        case picoquic_fc_srv_unaware:
+            bytes_next = picoquic_format_fc_announce_frame(bytes_next, bytes_max, more_data, is_pure_ack, cnx->flows[i]);
+        case picoquic_fc_srv_aware_unjoined:
+            break;
+        case picoquic_fc_srv_joined_no_key:
+            bytes_next = picoquic_format_fc_key_frame(bytes_next, bytes_max, more_data, is_pure_ack, cnx->flows[i]);
+        case picoquic_fc_srv_joined_w_key:
+        case picoquic_fc_srv_listening:
+        case picoquic_fc_srv_leaving:
+        case picoquic_fc_srv_left:
+        default:
+            break;
+        }
+    }
+    return bytes_next;
+}
+
 int picoquic_fc_state_frame_needs_repeat(picoquic_cnx_t *cnx, const uint8_t *bytes,
     const uint8_t *bytes_max, int *no_need_to_repeat)
 {
@@ -257,12 +293,23 @@ void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t
 
     switch (action) {
     case PICOQUIC_FC_ACTION_JOIN:
+        if (flow->state == picoquic_fc_srv_aware_unjoined ||
+            flow->state == picoquic_fc_srv_leaving ||
+            flow->state == picoquic_fc_srv_left
+        ) {
+            flow->state = picoquic_fc_srv_joined_no_key;
+        }
     break;
     case PICOQUIC_FC_ACTION_LEAVE:
         flow->leave_required = 1;
         cnx->need_flow_update = 1;
+        flow->state = picoquic_fc_srv_left;
     break;
     case PICOQUIC_FC_ACTION_LISTEN:
+        if (flow->state == picoquic_fc_srv_joined_w_key
+        ) {
+            flow->state = picoquic_fc_srv_listening;
+        }
     break;
     case PICOQUIC_FC_ACTION_SYNC:
         picoquic_update_sack_list(&flow->path->ack_ctx.sack_list, action_data, action_data, current_time);
