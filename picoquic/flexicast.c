@@ -257,6 +257,12 @@ void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t
 
     switch (action) {
     case PICOQUIC_FC_ACTION_JOIN:
+        if (flow->state == picoquic_fc_srv_aware_unjoined ||
+            flow->state == picoquic_fc_srv_leaving ||
+            flow->state == picoquic_fc_srv_left
+        ) {
+            flow->state = picoquic_fc_srv_joined_no_key;
+        }
     break;
     case PICOQUIC_FC_ACTION_LEAVE:
         if (picoquic_fc_cli_unaware < flow->state && flow->state < picoquic_fc_srv_unaware) {
@@ -266,8 +272,13 @@ void picoquic_on_fc_state_received(picoquic_cnx_t *cnx, int flow_index, uint64_t
             flow->state = picoquic_fc_srv_left;
         }
         cnx->need_flow_update = 1;
+        flow->state = picoquic_fc_srv_left;
     break;
     case PICOQUIC_FC_ACTION_LISTEN:
+        if (flow->state == picoquic_fc_srv_joined_w_key
+        ) {
+            flow->state = picoquic_fc_srv_listening;
+        }
     break;
     case PICOQUIC_FC_ACTION_SYNC:
         picoquic_update_sack_list(&flow->path->ack_ctx.sack_list, action_data, action_data, current_time);
