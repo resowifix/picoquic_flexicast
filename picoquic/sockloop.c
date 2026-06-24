@@ -2616,8 +2616,22 @@ void* picoquic_packet_loop_v3(void* v_ctx)
 
         packet_loop_open_flexicast_sockets(quic, param, s_ctx, &nb_sockets, ecn_value, current_time);
 
+        if (poll_list_size < (size_t)(nb_sockets + max_qmux_sockets + 1)) {
+            size_t n_poll_list_size = (size_t)(nb_sockets + max_qmux_sockets + 1);
+            struct pollfd * n_poll_list = (struct pollfd*)calloc(1, sizeof(struct pollfd) * poll_list_size);
+            memcpy(n_poll_list, poll_list, poll_list_size);
+            if (n_poll_list == NULL) {
+                ret = -1;
+                continue;
+            }
+            free(poll_list);
+            poll_list = n_poll_list;
+            poll_list_size = n_poll_list_size;
+
+        }
+
         picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets,
-                sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
+                        sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
 
         nb_sockets_available = nb_sockets;
 
