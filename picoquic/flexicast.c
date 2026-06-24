@@ -120,7 +120,6 @@ uint8_t *picoquic_manage_fc_cnx_frames(
     uint8_t *prev_bytes = bytes_next;
 
     for (int i = 0; i < cnx->nb_flows; i++) {
-        printf("state %.2x : %d", cnx->initial_cnxid.id[0], cnx->flows[i]->state);
         switch (cnx->flows[i]->state) {
         case picoquic_fc_cli_unaware:
             break;
@@ -182,8 +181,8 @@ uint8_t *picoquic_manage_fc_cnx_frames(
     return bytes_next;
 }
 
-int picoquic_fc_state_frame_needs_repeat(picoquic_cnx_t *cnx, const uint8_t *bytes,
-    const uint8_t *bytes_max, int *no_need_to_repeat)
+int picoquic_fc_state_frame_needs_repeat(picoquic_cnx_t* cnx, const uint8_t* bytes,
+    const uint8_t* bytes_max, int* no_need_to_repeat)
 {
     int ret = 0;
     uint64_t action = 0;
@@ -232,7 +231,7 @@ int picoquic_is_flexicast_address(struct sockaddr *addr)
     return 0;
 }
 
-uint8_t *picoquic_format_fc_leave_state_frames(picoquic_cnx_t *cnx, uint8_t *bytes, uint8_t *bytes_max, int *more_data, int *is_pure_ack)
+uint8_t* picoquic_format_fc_leave_state_frames(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t* bytes_max, int* more_data, int* is_pure_ack)
 {
     return bytes;
     if (cnx->is_flexicast_enabled) {

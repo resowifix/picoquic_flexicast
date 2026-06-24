@@ -1524,6 +1524,13 @@ static int picoquic_stream_network_input(picoquic_cnx_t* cnx, uint64_t stream_id
                 /* check how much data there is to send */
                 picoquic_stream_data_callback(cnx, stream);
             }
+
+            if (stream->stream_data_tree.size > 128 &&
+                ((uint64_t)stream->stream_data_tree.size) * 1536 > (stream->maxdata_local - stream->consumed_offset) * 6) {
+                /* This simple check detects abusive scenarios, like sending lots of tiny out of
+                 * order packets */
+                 ret = picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_INTERNAL_ERROR, 0);
+            }
         }
     }
 
@@ -2442,6 +2449,11 @@ const uint8_t* picoquic_decode_crypto_hs_frame(picoquic_cnx_t* cnx, const uint8_
             if (ret != 0) {
                 picoquic_connection_error(cnx, (int64_t)ret, picoquic_frame_type_crypto_hs);
                 bytes = NULL;
+            }
+            else if (stream->stream_data_tree.size > 128) {
+                /* The peer is sending lots of tiny packets, which is something attackers
+                * would do. */
+                ret = picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_INTERNAL_ERROR, picoquic_frame_type_crypto_hs);
             }
         }
     }
@@ -6637,8 +6649,7 @@ uint8_t* picoquic_format_bdp_frame(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t*
 */
 
 const uint8_t* picoquic_decode_fc_announce_frame(picoquic_cnx_t* cnx, picoquic_path_t* path_x, const uint8_t* bytes,
-    const uint8_t* bytes_max, uint64_t current_time)
-{
+    const uint8_t* bytes_max, uint64_t current_time) {
     int flow_index;
     picoquic_fc_flow_t received_flow;
     uint8_t ip_version;
@@ -6676,8 +6687,7 @@ const uint8_t* picoquic_decode_fc_announce_frame(picoquic_cnx_t* cnx, picoquic_p
     return bytes;
 }
 
-const uint8_t* picoquic_parse_fc_announce_frame(const uint8_t* bytes, const uint8_t* bytes_max, picoquic_fc_flow_id_t* flow_id)
-{
+const uint8_t* picoquic_parse_fc_announce_frame(const uint8_t* bytes, const uint8_t* bytes_max, picoquic_fc_flow_id_t* flow_id) {
     uint8_t ip_version;
 
     if (
