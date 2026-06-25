@@ -79,6 +79,10 @@ int picoquic_update_flow(picoquic_fc_flow_t *flow,
             flow->udp_port = new_flow->udp_port;
             flow->source_addr = new_flow->source_addr;
             flow->group_addr = new_flow->group_addr;
+            flow->ack_delay_timer = new_flow->ack_delay_timer;
+            if (flow->path != NULL) {
+                flow->path->max_ack_delay = flow->ack_delay_timer;
+            }
 
             flow->state = picoquic_fc_cli_aware_unjoined;
 

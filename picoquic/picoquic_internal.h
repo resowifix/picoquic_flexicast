@@ -1242,8 +1242,6 @@ typedef struct st_picoquic_fc_flow_t {
 
     picoquic_fc_state state;
 
-    picoquic_fc_state state;
-
     picoquic_crypto_context_t crypto_context;
 } picoquic_fc_flow_t;
 
