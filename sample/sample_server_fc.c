@@ -166,7 +166,7 @@ int sample_server_fc_callback(picoquic_cnx_t* cnx,
  * - The loop breaks if the socket return an error. 
  */
 
-int picoquic_sample_server_fc(int server_port, const char* server_cert, const char* server_key, const char* default_dir, const char* fc_src_ip)
+int picoquic_sample_server_fc(int server_port, const char* server_cert, const char* server_key, const char* default_dir, const char* fc_src_ip, const char* mc_ip)
 {
     /* Start: start the QUIC process with cert and key files */
     int ret = 0;
@@ -220,7 +220,10 @@ int picoquic_sample_server_fc(int server_port, const char* server_cert, const ch
         memset(&src_addr, 0, sizeof(struct sockaddr_in));
         flexicast_address.sin_family = AF_INET;
         flexicast_address.sin_port = htons(4444);
-        inet_pton(AF_INET, "239.239.239.35", &flexicast_address.sin_addr);
+        if (inet_pton(AF_INET, mc_ip, &flexicast_address.sin_addr) != 1){
+            fprintf(stderr, "failed to set multicast address: %s, set it to 239.239.239.35 by default", strerror(errno));
+            inet_pton(AF_INET, "239.239.239.35", &flexicast_address.sin_addr);
+        }
         src_addr.sin_family = AF_INET;
         src_addr.sin_port = htons(server_port);
         inet_pton(AF_INET, fc_src_ip, &src_addr.sin_addr);
@@ -268,7 +271,7 @@ int picoquic_sample_server_fc(int server_port, const char* server_cert, const ch
 static void usage(char const * sample_name)
 {
     fprintf(stderr, "Usage:\n");
-    fprintf(stderr, "    %s port cert_file private_key_file folder fc_source_ip\n", sample_name);
+    fprintf(stderr, "    %s port cert_file private_key_file folder fc_source_ip mc_ip\n", sample_name);
     exit(1);
 }
 
@@ -291,9 +294,9 @@ int main(int argc, char** argv)
     (void)WSA_START(MAKEWORD(2, 2), &wsaData);
 #endif
 
-    if (argc == 6) {
+    if (argc == 7) {
         int server_port = get_port(argv[0], argv[1]);
-        exit_code = picoquic_sample_server_fc(server_port, argv[2], argv[3], argv[4], argv[5]);
+        exit_code = picoquic_sample_server_fc(server_port, argv[2], argv[3], argv[4], argv[5], argv[6]);
     }
     else {
         usage(argv[0]);
