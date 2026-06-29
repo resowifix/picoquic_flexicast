@@ -884,6 +884,9 @@ static int picoquic_set_tp_value_by_type(picoquic_tp_t* tp, uint64_t tp_type, ui
     case picoquic_tp_reset_stream_at:
         tp->is_reset_stream_at_enabled = (tp_value != 0);
         break;
+    case picoquic_tp_flexicast_support:
+        tp->flexicast_support = (uint8_t)tp_value;
+        break;
     default:
         ret = -1;
         break;
@@ -947,6 +950,16 @@ void picoquic_set_default_multipath_option(picoquic_quic_t* quic, int multipath_
 
     if (multipath_option & 1) {
         quic->default_tp.initial_max_path_id = 2;
+    }
+}
+
+void picoquic_set_default_flexicast_option(picoquic_quic_t* quic, int flexicast_option)
+{
+    PICOQUIC_THREAD_CHECK(quic);
+    quic->default_flexicast_option = flexicast_option;
+    
+    if (flexicast_option & 1) {
+        quic->default_tp.flexicast_support = 1;
     }
 }
 
@@ -2030,6 +2043,17 @@ void picoquic_delete_path(picoquic_cnx_t* cnx, int path_index)
     cnx->path[cnx->nb_paths] = NULL;
 }
 
+void picoquic_delete_flows(picoquic_cnx_t *cnx)
+{
+    if (cnx->flows) {
+        for (int i = 0; i < cnx->nb_flows; i++) {
+            free(cnx->flows[i]->key);
+            free(cnx->flows[i]);
+        }
+    }
+    free(cnx->flows);
+}
+
 /*
  * Path challenges may be abandoned if they are tried too many times without success. 
  */
@@ -2043,6 +2067,11 @@ void picoquic_delete_abandoned_paths(picoquic_cnx_t* cnx, uint64_t current_time,
     if (cnx->is_multipath_enabled && cnx->nb_paths > 1) {
         path_index_good = 0;
         path_index_current = 0;
+    }
+    
+    if (cnx->is_flexicast_enabled && cnx->nb_paths > 1 && cnx->path[1]->receive_only_fc_flow_path) {
+        path_index_good = 2;
+        path_index_current = 2;
     }
 
     while (path_index_current < cnx->nb_paths) {
@@ -2144,7 +2173,7 @@ void picoquic_demote_path(picoquic_cnx_t* cnx, int path_index, uint64_t current_
             if (path_index == 0) {
                 int alt_path0 = 0;
                 for (int i = 1; i < cnx->nb_paths; i++) {
-                    if (cnx->path[i]->first_tuple->p_remote_cnxid != NULL) {
+                    if (cnx->path[i]->first_tuple->p_remote_cnxid != NULL && !cnx->path[i]->receive_only_fc_flow_path) {
                         alt_path0 = i;
                         break;
                     }
@@ -3944,6 +3973,17 @@ picoquic_cnx_t* picoquic_create_cnx_internal(picoquic_quic_t* quic,
         if (cnx->congestion_alg != NULL) {
             cnx->congestion_alg->alg_init(cnx->path[0], cnx->congestion_alg_option_string, start_time);
         }
+
+        if (quic->default_flexicast_option && quic->flexicast_cnx) {
+            cnx->flows = malloc(sizeof(picoquic_fc_flow_t*));
+            cnx->flows[0] = malloc(sizeof(picoquic_fc_flow_t));
+            memcpy(cnx->flows[0], quic->flexicast_cnx->flows[0], sizeof(picoquic_fc_flow_t));
+            cnx->flows[0]->key = malloc(cnx->flows[0]->key_len);
+            memcpy(cnx->flows[0]->key, quic->flexicast_cnx->flows[0]->key, cnx->flows[0]->key_len);
+            cnx->flows[0]->state = picoquic_fc_srv_unaware;
+            cnx->nb_flows = 1;
+            cnx->nb_flows_alloc = 1;
+        }
     }
 
     /* Only initialize TLS after all parameters have been set */
@@ -4038,6 +4078,65 @@ picoquic_cnx_t* picoquic_create_client_cnx(picoquic_quic_t* quic,
             cnx = NULL;
         }
     }
+
+    return cnx;
+}
+
+void picoquic_set_fc_address(picoquic_quic_t* quic, struct sockaddr **addr_to)
+{
+    if (!*addr_to) {
+        *addr_to = malloc(sizeof(struct sockaddr));
+        (*(struct sockaddr_in**)addr_to)->sin_family = AF_INET;
+        (*(struct sockaddr_in**)addr_to)->sin_port = htons(4444);
+        inet_pton(AF_INET, "239.239.239.204", &(*(struct sockaddr_in**)addr_to)->sin_addr);
+    }
+}
+
+picoquic_cnx_t *picoquic_create_datagram_fc_server(picoquic_quic_t* quic,
+    picoquic_connection_id_t initial_cnx_id, picoquic_connection_id_t remote_cnx_id,
+    struct sockaddr* addr_to, struct sockaddr* src_addr, uint64_t start_time, uint32_t preferred_version, picoquic_stream_data_cb_fn f)
+{
+    PICOQUIC_THREAD_CHECK(quic);
+    if (picoquic_is_connection_id_null(&initial_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &initial_cnx_id, 16);
+    }
+    if (picoquic_is_connection_id_null(&remote_cnx_id)) {
+        picoquic_create_random_cnx_id(quic, &remote_cnx_id, 16);
+    }
+    picoquic_set_fc_address(quic, &addr_to);
+    picoquic_cnx_t *cnx = picoquic_create_cnx_internal(quic, initial_cnx_id, remote_cnx_id, addr_to, start_time, preferred_version,
+        NULL, NULL, 0, NULL, NULL);
+
+    cnx->nb_flows = cnx->nb_flows_alloc = 1;
+    cnx->flows = calloc(1, sizeof(picoquic_fc_flow_t *));
+    cnx->flows[0] = calloc(1, sizeof(picoquic_fc_flow_t));
+    cnx->flows[0]->flow_id.id_len = remote_cnx_id.id_len;
+    memcpy(cnx->flows[0]->flow_id.id, remote_cnx_id.id, remote_cnx_id.id_len);
+    cnx->flows[0]->udp_port = ntohs(((struct sockaddr_in *)addr_to)->sin_port);
+    memcpy(&cnx->flows[0]->group_addr, addr_to, sizeof(struct sockaddr));
+    memcpy(&cnx->flows[0]->source_addr, src_addr, sizeof(struct sockaddr));
+    cnx->flows[0]->key_len = 32;
+    cnx->flows[0]->key = malloc(cnx->flows[0]->key_len);
+    picoquic_crypto_random(quic, cnx->flows[0]->key, cnx->flows[0]->key_len);
+    cnx->flows[0]->crypto_algo = 0;
+    ptls_cipher_suite_t* algo = picoquic_get_cipher_suite_by_id_v(cnx->flows[0]->crypto_algo, cnx->quic->use_low_memory);
+    const char *prefix_label = picoquic_supported_versions[cnx->version_index].tls_prefix_label;
+    
+    picoquic_set_fc_encryption_from_secret(algo, &cnx->crypto_context[picoquic_epoch_1rtt], cnx->flows[0]->key, prefix_label);
+    picoquic_set_fc_decryption_from_secret(algo, &cnx->crypto_context[picoquic_epoch_1rtt], cnx->flows[0]->key, prefix_label);
+    cnx->cnx_state = picoquic_state_ready;
+    cnx->idle_timeout = cnx->crypto_epoch_length_max = UINT64_MAX;
+
+    cnx->callback_fn = f;
+    cnx->app_wake_time = start_time + 10;
+    cnx->remote_parameters.max_datagram_frame_size = cnx->local_parameters.max_datagram_frame_size = PICOQUIC_MAX_PACKET_SIZE;
+    cnx->path[0]->unique_path_id = 1;
+    cnx->is_multipath_enabled = 1;
+
+    picoquic_disable_keep_alive(cnx);
+    picoquic_cnx_set_pmtud_policy(cnx, picoquic_pmtud_blocked);
+
+    quic->flexicast_cnx = cnx;
 
     return cnx;
 }
@@ -4829,6 +4928,8 @@ void picoquic_delete_cnx(picoquic_cnx_t* cnx)
             free(cnx->path);
             cnx->path = NULL;
         }
+
+        picoquic_delete_flows(cnx);
 
         picoquic_delete_local_cnxid_lists(cnx);
         picoquic_delete_remote_cnxid_stashes(cnx);
