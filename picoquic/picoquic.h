@@ -40,7 +40,7 @@
 extern "C" {
 #endif
 
-#define PICOQUIC_VERSION "1.1.50.1"
+#define PICOQUIC_VERSION "1.1.50.2"
 #define PICOQUIC_ERROR_CLASS 0x400
 #define PICOQUIC_ERROR_DUPLICATE (PICOQUIC_ERROR_CLASS + 1)
 #define PICOQUIC_ERROR_AEAD_CHECK (PICOQUIC_ERROR_CLASS + 3)
@@ -318,11 +318,6 @@ typedef struct st_picoquic_connection_id_t {
     uint8_t id[PICOQUIC_CONNECTION_ID_MAX_SIZE];
     uint8_t id_len;
 } picoquic_connection_id_t;
-
-typedef struct st_picoquic_fc_flow_id_t {
-    uint8_t id[PICOQUIC_FC_FLOW_ID_MAX_SIZE];
-    uint8_t id_len;
-} picoquic_fc_flow_id_t;
 
 /* Quic defines 4 epochs, which are used for managing the
  * crypto contexts

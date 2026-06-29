@@ -254,24 +254,6 @@ extern const size_t picoquic_nb_supported_versions;
 
 int picoquic_get_version_index(uint32_t proposed_version);
 
-typedef enum {
-    picoquic_fc_cli_unaware = 0,
-    picoquic_fc_cli_aware_unjoined,
-    picoquic_fc_cli_aware_unjoined_socket_ready,
-    picoquic_fc_cli_joined_no_key,
-    picoquic_fc_cli_joined_w_key,
-    picoquic_fc_cli_listening,
-    picoquic_fc_cli_leaving,
-    picoquic_fc_cli_left,
-    picoquic_fc_srv_unaware,
-    picoquic_fc_srv_aware_unjoined,
-    picoquic_fc_srv_joined_no_key,
-    picoquic_fc_srv_joined_w_key,
-    picoquic_fc_srv_listening,
-    picoquic_fc_srv_leaving,
-    picoquic_fc_srv_left,
-} picoquic_fc_state;
-
 /* There are two loss bits in the packet header. On is used
  * to report errors, the other to build an observable square
  * wave, of half period Q defined below.
