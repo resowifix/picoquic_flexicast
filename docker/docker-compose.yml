@@ -1,0 +1,27 @@
+services:
+  picoquic-fc-client:
+    image: resowifix/picoquic-fc-dtgrm-client:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SERVER: 10.0.0.1
+      PORT: 4443
+      LOG_DIR: /app/log
+    volumes:
+      - ./log:/app/log
+    network_mode: host
+
+  picoquic-fc-server:
+    image: resowifix/picoquic-fc-dtgrm-server:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    environment:
+      SERVER: 10.0.0.1
+      MC_ADDR: 234.234.234.100
+      PORT: 4443
+      LOG_DIR: /app/log
+    volumes:
+      - ./log:/app/log
+    network_mode: host
