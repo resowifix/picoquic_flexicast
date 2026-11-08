@@ -3883,9 +3883,12 @@ const uint8_t* picoquic_decode_ack_frame(picoquic_cnx_t* cnx, const uint8_t* byt
             }
         }
 
-        if (largest >= pkt_ctx->send_sequence) {
+        if (largest >= pkt_ctx->send_sequence && largest > 0) {
             bytes = NULL;
             picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_PROTOCOL_VIOLATION, ftype);
+        }
+        else if (largest >= pkt_ctx->send_sequence && largest == 0) {
+            return bytes_max;
         }
         else {
             bytes += consumed;
@@ -6780,8 +6783,10 @@ uint8_t * picoquic_format_fc_state_frame(uint8_t* bytes, uint8_t* bytes_max, int
         (bytes = picoquic_frames_varint_encode(bytes, bytes_max, picoquic_frame_type_fc_state)) != NULL &&
         (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, flow->flow_id.id_len)) != NULL &&
         (bytes = picoquic_frames_fc_flow_id_encode(bytes, bytes_max, &flow->flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->self_sequence_number)) != NULL &&
-        (bytes = picoquic_frames_uint64_encode(bytes, bytes_max, action)) != NULL
+        //(bytes = picoquic_frames_varint_encode(bytes, bytes_max, flow->self_sequence_number)) != NULL &&
+        //(bytes = picoquic_frames_uint64_encode(bytes, bytes_max, action)) != NULL
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, action)) != NULL &&
+        (bytes = picoquic_frames_varint_encode(bytes, bytes_max, 1)) != NULL
  ) {
         *is_pure_ack = 0;
         flow->self_sequence_number ++;

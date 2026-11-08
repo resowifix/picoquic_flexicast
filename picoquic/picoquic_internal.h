@@ -538,6 +538,14 @@ typedef struct st_picoquic_ticket_key_state_t {
     void* aead_decrypt_ctx;
 } picoquic_ticket_key_state_t;
 
+typedef struct st_picoquic_amt_quic_ctx_t {
+    const struct sockaddr *relay;
+    socklen_t relay_len;
+    int ssm;
+    int timeout_ms;
+    int retries;
+} picoquic_amt_quic_ctx_t;
+
 typedef struct st_picoquic_quic_t {
     void* tls_master_ctx;
     picoquic_stream_data_cb_fn default_callback_fn;
@@ -675,6 +683,8 @@ typedef struct st_picoquic_quic_t {
     picoquic_cnx_t* qmux_pending_first;
     picoquic_cnx_t* qmux_pending_last;
     picohash_table* qmux_socket_id_table;
+
+    picoquic_amt_quic_ctx_t* amt_cxt;
 
     /* Logging APIS */
     struct st_picoquic_unified_logging_t* log_fns[PICOQUIC_MAX_LOG_FUNCTIONS];
@@ -1221,6 +1231,12 @@ typedef struct st_picoquic_output_stream_t {
     picoquic_stream_head_t* last_output_stream;
 } picoquic_output_stream_t;
 
+typedef enum {
+    picoquic_fc_start = 0,
+    picoquic_fc_multicast,
+    picoquic_fc_amt,
+} picoquic_fc_amt_state_t;
+
 typedef struct st_picoquic_fc_flow_t {
     struct sockaddr unicast_addr;
 
@@ -1241,6 +1257,9 @@ typedef struct st_picoquic_fc_flow_t {
     picoquic_fc_state state;
 
     picoquic_crypto_context_t crypto_context;
+
+    uint64_t time_since_anything;
+    picoquic_fc_amt_state_t amt_state;
 } picoquic_fc_flow_t;
 
 /*

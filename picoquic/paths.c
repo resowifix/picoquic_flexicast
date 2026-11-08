@@ -746,5 +746,13 @@ int picoquic_find_incoming_path(picoquic_cnx_t* cnx,
     *p_path_id = path_id;
     cnx->path[path_id]->last_packet_received_at = current_time;
 
+    if (cnx->is_flexicast_enabled && cnx->path[path_id]->receive_only_fc_flow_path) {
+        for (int i = 0; i < cnx->nb_flows; i++) {
+            if (cnx->flows[i]->path->unique_path_id == path_id) {
+                cnx->flows[i]->time_since_anything = current_time;
+            }
+        }
+    }
+
     return ret;
 }

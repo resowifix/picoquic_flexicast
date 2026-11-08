@@ -26,6 +26,7 @@
 #include "picoquic.h"
 #include "picoquic_utils.h"
 #include "picoquic_config.h"
+#include "amt.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -123,6 +124,13 @@ typedef struct st_picoqmux_socket_ctx_t {
     int is_io_uring_started;
 #endif
 } picoqmux_socket_ctx_t;
+
+typedef struct st_picoquic_amt_socket_ctx_t {
+    SOCKET_TYPE fd;
+    /* Connection context: initiated when initiating the socket, used for interactions. */
+    picoquic_cnx_t* cnx;
+    amt_gateway_t* amt;
+} picoquic_amt_socket_ctx_t;
 
 /* Loop action gets more complex if we have qmux options */
 typedef enum {

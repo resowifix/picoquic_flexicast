@@ -665,16 +665,24 @@ int picoquic_remove_header_protection(picoquic_cnx_t* cnx,
 {
     int ret = 0;
     size_t length = ph->offset + ph->payload_length; /* this may change after decrypting the PN */
-    void * pn_enc = cnx->crypto_context[ph->epoch].pn_dec;
+    void *pn_enc = cnx->crypto_context[ph->epoch].pn_dec;
 
-    int i = -1 ;
-    if (cnx->is_flexicast_enabled && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0) {
+    int i = -1;
+    if (cnx->is_flexicast_enabled
+            && (i = picoquic_find_flow_by_cid(cnx, &ph->l_cid->cnx_id)) >= 0) {
         pn_enc = cnx->flows[i]->crypto_context.pn_dec;
+        uint64_t last_pn = picoquic_sack_list_last(
+                picoquic_sack_list_from_cnx_context(cnx, ph->pc, ph->l_cid));
+        ret = picoquic_remove_header_protection_inner(bytes, length, decrypted_bytes, ph, pn_enc,
+                cnx->is_loss_bit_enabled_incoming,
+                last_pn == 0 ? cnx->flows[i]->packet_number : last_pn);
+        cnx->flows[i]->packet_number = 0;
+    } else {
+        picoquic_sack_list_t *sack_list =
+                picoquic_sack_list_from_cnx_context(cnx, ph->pc, ph->l_cid);
+        ret = picoquic_remove_header_protection_inner(bytes, length, decrypted_bytes, ph, pn_enc,
+                cnx->is_loss_bit_enabled_incoming, picoquic_sack_list_last(sack_list));
     }
-
-    picoquic_sack_list_t* sack_list = picoquic_sack_list_from_cnx_context(cnx, ph->pc, ph->l_cid);
-    ret = picoquic_remove_header_protection_inner(bytes, length, decrypted_bytes, ph,
-        pn_enc, cnx->is_loss_bit_enabled_incoming, picoquic_sack_list_last(sack_list));
 
     return ret;
 }

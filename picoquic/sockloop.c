@@ -539,7 +539,7 @@ int picoquic_join_multicast_tree(picoquic_fc_flow_t *flow, picoquic_socket_ctx_t
 }
 
 int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can_be_shared,
-    picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t* s_ctx, uint8_t ecn_value)
+        picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t *s_ctx, uint8_t ecn_value)
 {
     /* Compute how many sockets are necessary, and set the intial value of AF and port per socket */
     int sock_ret = 0;
@@ -553,7 +553,6 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
             if (!picoquic_join_multicast_tree(flow, s_ctx))
                 return 0;
         }
-        
     }
     if (sock_ret == 0 && can_be_shared != 0) {
         s_ctx->is_port_shared = (can_be_shared != 0);
@@ -570,42 +569,101 @@ int picoquic_packet_loop_open_flexicast_socket(picoquic_fc_flow_t *flow, int can
     return 1;
 }
 
-void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_loop_param_t *param, picoquic_socket_ctx_t* s_ctx, int *nb_sockets, uint8_t ecn_value, uint64_t current_time)
+int picoquic_packet_loop_open_flexicast_amt_socket(picoquic_fc_flow_t *flow,
+        picoquic_amt_quic_ctx_t *amt_ctx, picoquic_amt_socket_ctx_t ***samt_ctx, int nb_amt_sockets,
+        int *max_amt_sockets)
+{
+    if (nb_amt_sockets == *max_amt_sockets) {
+        picoquic_amt_socket_ctx_t **new_samt_ctx =
+                calloc(*max_amt_sockets * 2, sizeof(picoquic_amt_socket_ctx_t *));
+        for (int i = 0; i < nb_amt_sockets; i++) {
+            new_samt_ctx[i] = (*samt_ctx)[i];
+        }
+        *max_amt_sockets = 2 * *max_amt_sockets + 1;
+        if (*samt_ctx) {
+            free(*samt_ctx);
+        }
+        *samt_ctx = new_samt_ctx;
+    }
+
+    if (((*samt_ctx)[nb_amt_sockets] = calloc(1, sizeof(picoquic_amt_socket_ctx_t)))) {
+        if (((*samt_ctx)[nb_amt_sockets]->amt = amt_gateway_open(amt_ctx->relay, amt_ctx->relay_len,
+                     &flow->group_addr, sizeof(flow->group_addr), &flow->source_addr,
+                     sizeof(flow->source_addr), amt_ctx->ssm, amt_ctx->timeout_ms,
+                     amt_ctx->retries))) {
+            (*samt_ctx)[nb_amt_sockets]->fd = amt_gateway_fd((*samt_ctx)[nb_amt_sockets]->amt);
+            (*samt_ctx)[nb_amt_sockets]->cnx = flow->path->cnx;
+            return 0;
+        }
+    }
+
+    DBG_PRINTF("Cannot set amt socket : %s\n", strerror(errno));
+    return 1;
+}
+
+void picoquic_packet_loop_close_amt_socket(picoquic_amt_socket_ctx_t *samt_ctx)
+{
+    if (samt_ctx->fd != INVALID_SOCKET) {
+        SOCKET_CLOSE(samt_ctx->fd);
+        samt_ctx->fd = INVALID_SOCKET;
+    }
+}
+
+void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_loop_param_t *param,
+        picoquic_socket_ctx_t *s_ctx, int *nb_sockets, picoquic_amt_socket_ctx_t ***samt_ctx,
+        int *nb_amt_sockets, int *max_amt_sockets, uint8_t ecn_value, uint64_t current_time)
 {
     if (quic->current_number_connections > 0) {
         for (picoquic_cnx_t *cnx = quic->cnx_list; cnx != NULL; cnx = cnx->next_in_table) {
-            if (cnx->is_flexicast_enabled && cnx->need_flow_update &&
-                cnx->nb_flows > 0) {
-                cnx->need_flow_update = 0;
+            if (cnx->is_flexicast_enabled && cnx->nb_flows > 0) {
                 for (int j = 0; j < cnx->nb_flows; j++) {
                     picoquic_fc_flow_t *flow = cnx->flows[j];
                     if (flow->path == NULL && cnx->nb_paths < cnx->nb_local_cnxid_lists) {
                         int path_index = picoquic_create_path(cnx, current_time, &flow->group_addr,
-                                              &flow->source_addr, 0, UINT64_MAX);
+                                &flow->source_addr, 0, UINT64_MAX);
                         cnx->path[path_index]->receive_only_fc_flow_path = 1;
                         flow->path = cnx->path[path_index];
                     }
-                    if (flow->path && flow->state == picoquic_fc_cli_aware_unjoined &&
-                        !picoquic_packet_loop_open_flexicast_socket(
-                            flow,
-                            flow->udp_port ==
-                            (
-                            flow->unicast_addr.sa_family == AF_INET ?
-                                    ((struct sockaddr_in *)&flow->unicast_addr)->sin_port
-                                :
-                                    ((struct sockaddr_in6 *)&flow->unicast_addr)->sin6_port
-                            ) || flow->udp_port <= 1000,
-                            param,
-                            &s_ctx[*nb_sockets],
-                            ecn_value
-                        )
-                    ) {
-                        flow->s_ctx_i = *nb_sockets;
-                        (*nb_sockets)++;
-                        flow->state = picoquic_fc_cli_aware_unjoined_socket_ready;
+                    if (flow->path) {
+                        if (flow->state == picoquic_fc_cli_aware_unjoined
+                                && flow->amt_state == picoquic_fc_start
+                                && !picoquic_packet_loop_open_flexicast_socket(flow,
+                                        flow->udp_port
+                                                        == (flow->unicast_addr.sa_family == AF_INET
+                                                                        ? ((struct sockaddr_in *)&flow
+                                                                                          ->unicast_addr)
+                                                                                  ->sin_port
+                                                                        : ((struct sockaddr_in6 *)&flow
+                                                                                          ->unicast_addr)
+                                                                                  ->sin6_port)
+                                                || flow->udp_port <= 1000,
+                                        param, &s_ctx[*nb_sockets], ecn_value)) {
+                            flow->s_ctx_i = *nb_sockets;
+                            (*nb_sockets)++;
+                            flow->state = picoquic_fc_cli_aware_unjoined_socket_ready;
+                            flow->amt_state = picoquic_fc_multicast;
+                            flow->time_since_anything = current_time;
+                        } else if (
+                                quic->amt_cxt != NULL
+                                && flow->state == picoquic_fc_cli_listening
+                                && flow->amt_state == picoquic_fc_multicast
+                                && flow->time_since_anything - current_time > 750000
+                                && !picoquic_packet_loop_open_flexicast_amt_socket(flow,
+                                        quic->amt_cxt, samt_ctx, *nb_amt_sockets, max_amt_sockets)
+                        ) {
+                            picoquic_packet_loop_close_socket(&s_ctx[flow->s_ctx_i]);
+                            flow->s_ctx_i = *nb_amt_sockets;
+                            (*nb_amt_sockets)++;
+                            flow->state = picoquic_fc_cli_aware_unjoined_socket_ready;
+                            flow->amt_state = picoquic_fc_amt;
+                        }
                     }
                     if (flow->state == picoquic_fc_cli_left) {
-                        picoquic_packet_loop_close_socket(&s_ctx[flow->s_ctx_i]);
+                        if (flow->amt_state == picoquic_fc_multicast) {
+                            picoquic_packet_loop_close_socket(&s_ctx[flow->s_ctx_i]);
+                        } else if (flow->amt_state == picoquic_fc_amt) {
+                            picoquic_packet_loop_close_amt_socket(&(**samt_ctx)[flow->s_ctx_i]);
+                        }
                     }
                 }
             }
@@ -1717,15 +1775,18 @@ void picoquic_packet_loop_set_fds(
     int nb_sockets,
     picoqmux_socket_ctx_t** sqmux_ctx,
     int nb_qmux_sockets,
+    picoquic_amt_socket_ctx_t** samt_ctx,
+    int nb_amt_sockets,
     picoquic_network_thread_ctx_t* thread_ctx,
     uint64_t current_time)
 {
     int i_poll = 0;
     int i_poll_qmux = nb_sockets;
+    int i_poll_amt = i_poll_qmux + nb_qmux_sockets;
 
-    if (poll_list_size < (size_t)(nb_sockets + nb_qmux_sockets + 1)) {
-        DBG_PRINTF("Error: poll list size %d is too small for %d sockets and %d qmux sockets\n",
-            (int)poll_list_size, nb_sockets, nb_qmux_sockets);
+    if (poll_list_size < (size_t)(nb_sockets + nb_qmux_sockets + nb_amt_sockets + 1)) {
+        DBG_PRINTF("Error: poll list size %d is too small for %d sockets, %d qmux sockets and %d amt sockets\n",
+            (int)poll_list_size, nb_sockets, nb_qmux_sockets, nb_amt_sockets);
         return;
     }
 
@@ -1736,6 +1797,7 @@ void picoquic_packet_loop_set_fds(
         poll_list[0].events = POLLIN;
         i_poll = 1;
         i_poll_qmux += 1;
+        i_poll_amt += 1;
     }
     for (int i = 0; i < nb_sockets; i++) {
         poll_list[i_poll+i].fd = (int)s_ctx[i].fd;
@@ -1747,7 +1809,11 @@ void picoquic_packet_loop_set_fds(
             (sqmux_ctx[i]->cnx != NULL &&
                 sqmux_ctx[i]->cnx->next_wake_time <= current_time)?(POLLIN|POLLOUT):POLLIN;
     }
-    for (int i = i_poll_qmux + nb_qmux_sockets; i < (int)poll_list_size; i++) {
+    for (int i = 0; i < nb_amt_sockets; i++) {
+        poll_list[i + i_poll_amt].fd = (int)samt_ctx[i]->fd;
+        poll_list[i + i_poll_amt].events = POLLIN;
+    }
+    for (int i = i_poll_amt + nb_amt_sockets; i < (int)poll_list_size; i++) {
         poll_list[i].fd = -1;
     }
 }
@@ -1757,6 +1823,8 @@ int picoquic_packet_loop_poll(
     int nb_sockets,
     picoqmux_socket_ctx_t** sqmux_ctx,
     int nb_qmux_sockets,
+    picoquic_amt_socket_ctx_t** samt_ctx,
+    int nb_amt_sockets,
     uint64_t current_time,
     struct pollfd* poll_list,
     size_t poll_list_size,
@@ -1783,7 +1851,8 @@ int picoquic_packet_loop_poll(
     int bytes_recv = 0;
     int i_poll = (thread_ctx->wake_up_defined) ? 1 : 0;
     int i_qmux_poll = i_poll + nb_sockets;
-    int poll_max = i_qmux_poll + nb_qmux_sockets;
+    int i_amt_poll = i_qmux_poll + nb_qmux_sockets;
+    int poll_max = i_amt_poll + nb_amt_sockets;
     int ret_poll;
 
     if (poll_list_size < (size_t)poll_max) {
@@ -1793,7 +1862,7 @@ int picoquic_packet_loop_poll(
     }
 
     picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets, sqmux_ctx, nb_qmux_sockets,
-        thread_ctx, current_time);
+        samt_ctx, nb_amt_sockets, thread_ctx, current_time);
     ret_poll = poll(poll_list, poll_max, delta_t_ms);
 
     if (received_ecn != NULL) {
@@ -1868,6 +1937,27 @@ int picoquic_packet_loop_poll(
                         *socket_rank = i;
                         *action = picoquic_packet_loop_action_tcp_send_ready;
                         break;
+                    }
+                }
+            }
+            if (bytes_recv == 0 && *action == picoquic_packet_loop_action_none) {
+                /* Find the first amt event */
+                for (int i = 0; i < nb_amt_sockets; i++) {
+                    if (poll_list[i + i_amt_poll].revents != 0) {
+                        *socket_rank = i;
+                        socklen_t from_len, to_len;
+                        from_len = to_len = sizeof(*addr_from);
+                        int ttl = 0;
+                        bytes_recv = amt_gateway_recv((*samt_ctx)[i].amt, addr_from, &from_len,
+                                addr_dest, &to_len, &ttl, buffer, buffer_max);
+                        if (bytes_recv <= 0) {
+                            DBG_PRINTF("Could not receive packet on amt socket[%d]= %d!\n", i,
+                                    (int)(*samt_ctx)[i].fd);
+                            break;
+                        } else {
+                            *action = picoquic_packet_loop_action_udp_received;
+                            break;
+                        }
                     }
                 }
             }
@@ -2500,6 +2590,9 @@ void* picoquic_packet_loop_v3(void* v_ctx)
     int qmux_socket_was_closed = -1;
     uint8_t* qmux_buffer = NULL;
     size_t qmux_buffer_size = 0;
+    picoquic_amt_socket_ctx_t **samt_ctx = NULL;
+    int nb_amt_sockets = 0;
+    int max_amt_sockets = 0;
     picoquic_cnx_t* last_cnx = NULL;
     int loop_immediate = 0;
     unsigned int nb_loop_immediate = 0;
@@ -2573,13 +2666,13 @@ void* picoquic_packet_loop_v3(void* v_ctx)
     }
 #elif defined(PICOQUIC_WITH_POLL)
     if (ret == 0) {
-        poll_list_size = (size_t)(nb_sockets + max_qmux_sockets + 1);
+        poll_list_size = (size_t)(nb_sockets + 1 + max_qmux_sockets + 1 + (quic->amt_cxt != NULL ? 1 : 0));
         if ((poll_list = (struct pollfd*)malloc(sizeof(struct pollfd) * poll_list_size)) == NULL) {
             ret = -1;
         }
         else {
             picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets_available,
-                sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
+                sqmux_ctx, nb_qmux_sockets, samt_ctx, nb_amt_sockets, thread_ctx, current_time);
         }
     }
 #endif
@@ -2614,10 +2707,10 @@ void* picoquic_packet_loop_v3(void* v_ctx)
         uint8_t* received_buffer;
         uint64_t previous_time;
 
-        packet_loop_open_flexicast_sockets(quic, param, s_ctx, &nb_sockets, ecn_value, current_time);
+        packet_loop_open_flexicast_sockets(quic, param, s_ctx, &nb_sockets, &samt_ctx, &nb_amt_sockets, &max_amt_sockets, ecn_value, current_time);
 
         picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets,
-                sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
+                sqmux_ctx, nb_qmux_sockets, samt_ctx, nb_amt_sockets, thread_ctx, current_time);
 
         nb_sockets_available = nb_sockets;
 
@@ -2693,7 +2786,7 @@ void* picoquic_packet_loop_v3(void* v_ctx)
 #elif defined(PICOQUIC_WITH_POLL)
         bytes_recv = picoquic_packet_loop_poll(
             s_ctx, nb_sockets_available,
-            sqmux_ctx, nb_qmux_sockets, current_time,
+            sqmux_ctx, nb_qmux_sockets, samt_ctx, nb_amt_sockets, current_time,
             poll_list, poll_list_size, &addr_from, &addr_to, &if_index_to, &received_ecn,
             buffer, sizeof(buffer), delta_t, thread_ctx,
             &action, &socket_rank);
@@ -2786,7 +2879,7 @@ void* picoquic_packet_loop_v3(void* v_ctx)
 #elif defined(PICOQUIC_WITH_IO_URING)
 #elif defined(PICOQUIC_WITH_POLL)
                     picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets_available,
-                        sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
+                        sqmux_ctx, nb_qmux_sockets, samt_ctx, nb_amt_sockets, thread_ctx, current_time);
 #endif
                 }
                 ret = 0;
@@ -2866,7 +2959,7 @@ void* picoquic_packet_loop_v3(void* v_ctx)
 #elif defined(PICOQUIC_WITH_IO_URING)
 #elif defined(PICOQUIC_WITH_POLL)
                                     picoquic_packet_loop_set_fds(poll_list, poll_list_size, s_ctx, nb_sockets_available,
-                                        sqmux_ctx, nb_qmux_sockets, thread_ctx, current_time);
+                                        sqmux_ctx, nb_qmux_sockets, samt_ctx, nb_amt_sockets, thread_ctx, current_time);
 #endif
                                 }
                             }
