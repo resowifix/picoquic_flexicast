@@ -286,6 +286,7 @@ set(PICOHTTP_TEST_LIBRARY_FILES
 OPTION(WITH_OPENSSL "build with OpenSSL" ON)
 OPTION(WITH_AEGIS "enable AEGIS support through picotls/libaegis" OFF)
 
+OPTION(PICOQUIC_FETCH_LIBAMT "Fetch Libamt during configuration" OFF)
 OPTION(PICOQUIC_FETCH_PTLS "Fetch PicoTLS during configuration" OFF)
 OPTION(PICOQUIC_FETCH_AEGIS "Fetch libaegis during configuration when WITH_AEGIS is enabled" OFF)
 OPTION(PICOQUIC_AEGIS_FAVOR_PERFORMANCE "Build fetched libaegis with FAVOR_PERFORMANCE enabled" ON)
@@ -297,7 +298,7 @@ else()
 endif()
 set(PICOQUIC_FETCH_PTLS_TAG "${PICOQUIC_FETCH_PTLS_DEFAULT_TAG}" CACHE STRING "Git tag or commit used when PICOQUIC_FETCH_PTLS is enabled")
 set(PICOQUIC_FETCH_AEGIS_TAG "0.10.1" CACHE STRING "Git tag or commit used when PICOQUIC_FETCH_AEGIS is enabled")
-if(PICOQUIC_FETCH_PTLS OR (WITH_AEGIS AND PICOQUIC_FETCH_AEGIS))
+if(PICOQUIC_FETCH_PTLS OR (WITH_AEGIS AND PICOQUIC_FETCH_AEGIS) OR PICOQUIC_FETCH_LIBAMT)
     include(FetchContent)
 endif()
 if(WITH_AEGIS AND PICOQUIC_FETCH_AEGIS)
@@ -326,6 +327,35 @@ if(PICOQUIC_FETCH_PTLS)
             GIT_TAG             ${PICOQUIC_FETCH_PTLS_TAG})
     endif()
     FetchContent_MakeAvailable(picotls)
+endif()
+
+if(PICOQUIC_FETCH_LIBAMT)
+    FetchContent_Declare(libamt
+        GIT_REPOSITORY      https://github.com/IPNetworkingLab/libamt.git
+        GIT_TAG             main)
+
+    FetchContent_MakeAvailable(libamt)
+
+    # libamt has no CMakeLists.txt, so define its target ourselves.
+    if(NOT TARGET libamt)
+        add_library(libamt STATIC "${libamt_SOURCE_DIR}/amt.c")
+        target_include_directories(libamt
+            PUBLIC
+                $<BUILD_INTERFACE:${libamt_SOURCE_DIR}>
+                $<INSTALL_INTERFACE:include>
+        )
+
+        install(
+            TARGETS libamt
+            EXPORT picoquic-targets
+            ARCHIVE DESTINATION lib
+        )
+
+        install(
+            FILES "${libamt_SOURCE_DIR}/amt.h"
+            DESTINATION include
+        )
+    endif()
 endif()
 
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
@@ -486,6 +516,13 @@ add_library(picoquic::picoquic-core ALIAS picoquic-core)
 message(STATUS "Defining picoquic-core")
 message(STATUS "mbedtls/include: ${MBEDTLS_INCLUDE_DIRS}")
 
+if(PICOQUIC_FETCH_LIBAMT)
+    target_include_directories(picoquic-core
+        PUBLIC
+            $<BUILD_INTERFACE:${libamt_SOURCE_DIR}>
+    )
+endif()
+
 target_include_directories(picoquic-core
     PRIVATE
         ${PTLS_INCLUDE_DIRS}
@@ -502,6 +539,7 @@ target_link_libraries(picoquic-core
         ${LIBURING}
         ${OPENSSL_LIBRARIES}
         ${MBEDTLS_LIBRARIES}
+        libamt
     PUBLIC
         ${PTLS_LIBRARIES}
         ${PICOQUIC_CRYPTO_EXTRA_LIBRARIES}
@@ -701,6 +739,13 @@ if(BUILD_TESTING AND picoquic_BUILD_TESTS)
     target_link_libraries(picoquic_fc PRIVATE picoquic-log picoquic-core)
     target_include_directories(picoquic_fc PRIVATE loglib picoquic)
     set_picoquic_compile_settings(picoquic_fc)
+
+    add_executable(
+        picoquic_sf_fc
+        sample/sample_fc_client_sf_test.c)
+    target_link_libraries(picoquic_sf_fc PRIVATE picoquic-log picoquic-core)
+    target_include_directories(picoquic_sf_fc PRIVATE loglib picoquic)
+    set_picoquic_compile_settings(picoquic_sf_fc)
 
     add_executable(picoquic_sample
         sample/sample.c
