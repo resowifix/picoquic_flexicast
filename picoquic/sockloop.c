@@ -647,7 +647,7 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                                 quic->amt_cxt != NULL
                                 && flow->state == picoquic_fc_cli_listening
                                 && flow->amt_state == picoquic_fc_multicast
-                                && flow->time_since_anything - current_time > 750000
+                                && current_time - flow->time_since_anything > 750000
                                 && !picoquic_packet_loop_open_flexicast_amt_socket(flow,
                                         quic->amt_cxt, samt_ctx, *nb_amt_sockets, max_amt_sockets)
                         ) {
