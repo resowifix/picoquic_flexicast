@@ -6638,8 +6638,9 @@ uint8_t* picoquic_format_bdp_frame(picoquic_cnx_t* cnx, uint8_t* bytes, uint8_t*
  * FC_ANNOUNCE
 */
 
-const uint8_t* picoquic_decode_fc_announce_frame(picoquic_cnx_t* cnx, picoquic_path_t* path_x, const uint8_t* bytes,
-    const uint8_t* bytes_max, uint64_t current_time) {
+const uint8_t *picoquic_decode_fc_announce_frame(picoquic_cnx_t *cnx, picoquic_path_t *path_x,
+        const uint8_t *bytes, const uint8_t *bytes_max, uint64_t current_time)
+{
     int flow_index;
     picoquic_fc_flow_t received_flow;
     uint8_t ip_version;
@@ -6650,29 +6651,42 @@ const uint8_t* picoquic_decode_fc_announce_frame(picoquic_cnx_t* cnx, picoquic_p
     if (!cnx->is_flexicast_enabled) {
         /* Frame is unexpected */
         picoquic_connection_error_ex(cnx, PICOQUIC_TRANSPORT_PROTOCOL_VIOLATION,
-            picoquic_frame_type_fc_announce, "flexicast is not enabled");
+                picoquic_frame_type_fc_announce, "flexicast is not enabled");
         return bytes;
     }
 
-    if (
-        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &received_flow.flow_id.id_len)) != NULL &&
-        (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, received_flow.flow_id.id_len, &received_flow.flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &received_flow.remote_sequence_number)) != NULL &&
-        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &ip_version)) != NULL &&
-        (bytes = picoquic_frames_addr_decode(bytes, bytes_max, ip_version, &received_flow.source_addr)) != NULL &&
-        (bytes = picoquic_frames_addr_decode(bytes, bytes_max, ip_version, &received_flow.group_addr)) != NULL &&
-        (bytes = picoquic_frames_uint16_decode(bytes, bytes_max, &received_flow.udp_port)) != NULL &&
-        (bytes = picoquic_frames_uint64_decode(bytes, bytes_max, &received_flow.ack_delay_timer)) != NULL
-    ) {
-        if ((flow_index = picoquic_find_or_create_flow(cnx, &received_flow.flow_id)) >= 0 &&
-            received_flow.remote_sequence_number == cnx->flows[flow_index]->remote_sequence_number
-        ) {
+    if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &received_flow.flow_id.id_len))
+                    != NULL
+            && (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max,
+                        received_flow.flow_id.id_len, &received_flow.flow_id))
+                       != NULL
+            && (bytes = picoquic_frames_uint8_decode(bytes, bytes_max,
+                        &received_flow.remote_sequence_number))
+                       != NULL
+            && (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &ip_version)) != NULL
+            && (bytes = picoquic_frames_addr_decode(bytes, bytes_max, ip_version,
+                        &received_flow.source_addr))
+                       != NULL
+            && (bytes = picoquic_frames_addr_decode(bytes, bytes_max, ip_version,
+                        &received_flow.group_addr))
+                       != NULL
+            && (bytes = picoquic_frames_uint16_decode(bytes, bytes_max, &received_flow.udp_port))
+                       != NULL
+            && (bytes = picoquic_frames_uint64_decode(bytes, bytes_max,
+                        &received_flow.ack_delay_timer))
+                       != NULL
+            && (bytes = picoquic_frames_uint64_decode(bytes, bytes_max,
+                        &received_flow.ping_interval))
+                       != NULL) {
+        if ((flow_index = picoquic_find_or_create_flow(cnx, &received_flow.flow_id)) >= 0
+                && received_flow.remote_sequence_number
+                           == cnx->flows[flow_index]->remote_sequence_number) {
             cnx->flows[flow_index]->remote_sequence_number++;
             picoquic_update_flow(cnx->flows[flow_index], &received_flow, cnx, current_time);
         }
-    } 
-    else {
-        picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR, picoquic_frame_type_fc_announce);
+    } else {
+        picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR,
+                picoquic_frame_type_fc_announce);
     }
     return bytes;
 }
@@ -6816,102 +6830,79 @@ const uint8_t* picoquic_skip_fc_state_frame(const uint8_t* bytes, const uint8_t*
 /*FC_KEY
 */
 
-const uint8_t* picoquic_decode_fc_key_frame(picoquic_cnx_t* cnx, picoquic_path_t* path_x, const uint8_t* bytes, const uint8_t* bytes_max)
+const uint8_t *picoquic_decode_fc_key_frame(picoquic_cnx_t *cnx, picoquic_path_t *path_x,
+        const uint8_t *bytes, const uint8_t *bytes_max)
 {
     picoquic_fc_flow_id_t flow_id;
-    uint64_t sequence_number;
     const uint8_t *k_bytes;
     int i = -1;
-
-    const uint8_t *b = bytes;
 
     if (!cnx->is_flexicast_enabled) {
         /* Frame is unexpected */
         picoquic_connection_error_ex(cnx, PICOQUIC_TRANSPORT_PROTOCOL_VIOLATION,
-            picoquic_frame_type_fc_key, "flexicast is not enabled");
+                picoquic_frame_type_fc_key, "flexicast is not enabled");
         return bytes;
     }
 
-    if (    // QUICHE
-        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id.id_len)) != NULL &&
-        (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id.id_len, &flow_id)) != NULL &&
-        (i = picoquic_find_flow_by_fid(cnx, &flow_id)) >= 0 &&
-        (k_bytes = bytes = picoquic_frames_varint_decode(bytes, bytes_max, &cnx->flows[i]->key_len)) != NULL &&
-        bytes + cnx->flows[i]->key_len <= bytes_max && (cnx->flows[i]->key = realloc(cnx->flows[i]->key, cnx->flows[i]->key_len)) != NULL &&
-        (bytes = picoquic_frames_uint8_decode(bytes + cnx->flows[i]->key_len, bytes_max, (uint8_t*)&cnx->flows[i]->crypto_algo)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &cnx->flows[i]->packet_number)) != NULL
-    ) {
+    if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id.id_len)) != NULL
+            && (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id.id_len,
+                        &flow_id))
+                       != NULL
+            && (i = picoquic_find_flow_by_fid(cnx, &flow_id)) >= 0
+            && (k_bytes = bytes = picoquic_frames_varint_decode(bytes, bytes_max,
+                        &cnx->flows[i]->key_len))
+                       != NULL
+            && bytes + cnx->flows[i]->key_len <= bytes_max
+            && (cnx->flows[i]->key = realloc(cnx->flows[i]->key, cnx->flows[i]->key_len)) != NULL
+            && (bytes = picoquic_frames_uint8_decode(bytes + cnx->flows[i]->key_len, bytes_max,
+                        (uint8_t *)&cnx->flows[i]->crypto_algo))
+                       != NULL
+            && (bytes = picoquic_frames_varint_decode(bytes, bytes_max,
+                        &cnx->flows[i]->packet_number))
+                       != NULL
+            && (bytes = picoquic_frames_uint32_decode(bytes, bytes_max, &cnx->flows[i]->crypt_addr))
+                       != NULL
+            && (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &cnx->flows[i]->client_seq))
+                       != NULL) {
         memcpy(cnx->flows[i]->key, k_bytes, cnx->flows[i]->key_len);
         cnx->flows[i]->crypto_algo &= 0xff;
-        ptls_cipher_suite_t* algo;
+        ptls_cipher_suite_t *algo;
         const char *prefix_label = picoquic_supported_versions[cnx->version_index].tls_prefix_label;
-        if ((algo = picoquic_get_cipher_suite_by_id_v(cnx->flows[i]->crypto_algo, cnx->quic->use_low_memory)) != NULL &&
-            (picoquic_set_fc_decryption_from_secret(algo, &cnx->flows[i]->crypto_context, cnx->flows[i]->key, prefix_label) == 0) &&
-            cnx->flows[i]->state == picoquic_fc_cli_joined_no_key
-        ) {
+        if ((algo = picoquic_get_cipher_suite_by_id_v(cnx->flows[i]->crypto_algo,
+                     cnx->quic->use_low_memory))
+                        != NULL
+                && (picoquic_set_fc_decryption_from_secret(algo, &cnx->flows[i]->crypto_context,
+                            cnx->flows[i]->key, prefix_label)
+                        == 0)
+                && cnx->flows[i]->state == picoquic_fc_cli_joined_no_key) {
             cnx->flows[i]->state = picoquic_fc_cli_joined_w_key;
         }
-    }
-    else {
-        bytes = b;
-        if (    // DRAFT
-            (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id.id_len)) != NULL &&
-            (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id.id_len, &flow_id)) != NULL &&
-            (i = picoquic_find_flow_by_fid(cnx, &flow_id)) >= 0 &&
-            (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &sequence_number)) != NULL &&
-            (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &cnx->flows[i]->packet_number)) != NULL &&
-            (k_bytes = bytes = picoquic_frames_varint_decode(bytes, bytes_max, &cnx->flows[i]->key_len)) != NULL &&
-            bytes + cnx->flows[i]->key_len <= bytes_max && (cnx->flows[i]->key = realloc(cnx->flows[i]->key, cnx->flows[i]->key_len)) != NULL &&
-            (bytes = picoquic_frames_uint64_decode(bytes + cnx->flows[i]->key_len, bytes_max, &cnx->flows[i]->crypto_algo)) != NULL
-        ) {
-            memcpy(cnx->flows[i]->key, k_bytes, cnx->flows[i]->key_len);
-            cnx->flows[i]->crypto_algo &= 0xff;
-            ptls_cipher_suite_t* algo;
-            const char *prefix_label = picoquic_supported_versions[cnx->version_index].tls_prefix_label;
-            if ((algo = picoquic_get_cipher_suite_by_id_v(cnx->flows[i]->crypto_algo, cnx->quic->use_low_memory)) != NULL &&
-                (picoquic_set_fc_decryption_from_secret(algo, &cnx->flows[i]->crypto_context, cnx->flows[i]->key, prefix_label) == 0) &&
-                cnx->flows[i]->state == picoquic_fc_cli_joined_no_key
-            ) {
-                cnx->flows[i]->state = picoquic_fc_cli_joined_w_key;
-            }
-        }
-        else {
-            picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR, picoquic_frame_type_fc_key);
-        }
+    } else {
+        picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR,
+                picoquic_frame_type_fc_key);
     }
 
     return bytes;
 }
 
-const uint8_t* picoquic_parse_fc_key_frame(const uint8_t* bytes, const uint8_t* bytes_max, picoquic_fc_flow_id_t* flow_id)
+const uint8_t *picoquic_parse_fc_key_frame(const uint8_t *bytes, const uint8_t *bytes_max,
+        picoquic_fc_flow_id_t *flow_id)
 {
-    const uint8_t *b = bytes;
     uint64_t key_len;
 
-    if (    // QUICHE
-        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id->id_len)) != NULL &&
-        (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id->id_len, flow_id)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &key_len)) != NULL &&
-        bytes + key_len <= bytes_max &&
-        (bytes = picoquic_frames_fixed_skip(bytes + key_len, bytes_max, sizeof(uint8_t))) != NULL &&
-        (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL
-    ) {}
-    else {
-        bytes = b;
-        if (    // DRAFT
-            (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id->id_len)) != NULL &&
-            (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id->id_len, flow_id)) != NULL &&
-            (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL &&
-            (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL &&
-            (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &key_len)) != NULL &&
-            bytes + key_len <= bytes_max &&
-            (bytes = picoquic_frames_fixed_skip(bytes + key_len, bytes_max, sizeof(uint64_t))) != NULL
-        ) {}
-        else {
-            bytes = NULL;
-        }
+    if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &flow_id->id_len)) != NULL
+            && (bytes = picoquic_frames_fc_flow_id_decode(bytes, bytes_max, flow_id->id_len,
+                        flow_id))
+                       != NULL
+            && (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &key_len)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, key_len)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, 1)) != NULL
+            && (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, 4)) != NULL) {
+        bytes = picoquic_frames_varint_skip(bytes, bytes_max);
+    } else {
+        bytes = NULL;
     }
-
     return bytes;
 }
 
@@ -6944,21 +6935,85 @@ uint8_t * picoquic_format_fc_key_frame(uint8_t* bytes, uint8_t* bytes_max, int* 
     return bytes;
 }
 
-const uint8_t* picoquic_skip_fc_key_frame(const uint8_t* bytes, const uint8_t* bytes_max)
+const uint8_t *picoquic_skip_fc_key_frame(const uint8_t *bytes, const uint8_t *bytes_max)
 {
     uint8_t id_len;
     uint64_t key_len;
 
-    if (
-        (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &id_len)) != NULL &&
-        (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, id_len)) != NULL &&
-        (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL &&
-        (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL &&
-        (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &key_len)) != NULL &&
-        (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, key_len)) != NULL
-    ) {
-        bytes = picoquic_frames_fixed_skip(bytes, bytes_max, sizeof(uint64_t));
+    if ((bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &id_len)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, id_len)) != NULL
+            && (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &key_len)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, key_len)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, 1)) != NULL
+            && (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL
+            && (bytes = picoquic_frames_fixed_skip(bytes, bytes_max, 4)) != NULL) {
+        bytes = picoquic_frames_varint_skip(bytes, bytes_max);
     }
+    return bytes;
+}
+
+/*FC_PING_SELECTOR
+*/
+
+const uint8_t *picoquic_decode_fc_ping_selector_frame(picoquic_cnx_t *cnx, picoquic_path_t *path_x,
+        const uint8_t *bytes, const uint8_t *bytes_max, int *ack_needed)
+{
+    uint32_t prefix;
+    uint8_t prefix_len;
+    uint64_t seq_high, seq_count;
+
+    if (!cnx->is_flexicast_enabled) {
+        /* Frame is unexpected */
+        picoquic_connection_error_ex(cnx, PICOQUIC_TRANSPORT_PROTOCOL_VIOLATION,
+                picoquic_frame_type_fc_ping_selector, "flexicast is not enabled");
+        return bytes;
+    }
+
+    if ((bytes = picoquic_frames_uint32_decode(bytes, bytes_max, &prefix)) != NULL
+            && (bytes = picoquic_frames_uint8_decode(bytes, bytes_max, &prefix_len)) != NULL
+            && (bytes = picoquic_frames_varint_decode(bytes, bytes_max, &seq_high)) != NULL) {
+        bytes = picoquic_frames_varint_decode(bytes, bytes_max, &seq_count);
+        for (int i = 0; i < cnx->nb_flows; i++) {
+            if (cnx->flows[i]->path->unique_path_id == path_x->unique_path_id) {
+                *ack_needed = cnx->flows[i]->client_seq <= seq_high
+                              && cnx->flows[i]->client_seq > seq_high - seq_count;
+                break;
+            }
+        }
+    } else {
+        picoquic_connection_error(cnx, PICOQUIC_TRANSPORT_FRAME_FORMAT_ERROR,
+                picoquic_frame_type_fc_ping_selector);
+    }
+    return bytes;
+}
+
+uint8_t *picoquic_format_fc_ping_selector_frame(uint8_t *bytes, uint8_t *bytes_max, int *more_data,
+        int *is_pure_ack, uint32_t prefix, uint8_t prefix_len, uint64_t seq_high,
+        uint64_t seq_count)
+{
+    uint8_t *bytes0 = bytes;
+    if ((bytes = picoquic_frames_varint_encode(bytes, bytes_max,
+                 picoquic_frame_type_fc_ping_selector))
+                    != NULL
+            && (bytes = picoquic_frames_uint32_encode(bytes, bytes_max, prefix)) != NULL
+            && (bytes = picoquic_frames_uint8_encode(bytes, bytes_max, prefix_len)) != NULL
+            && (bytes = picoquic_frames_varint_encode(bytes, bytes_max, seq_high)) != NULL
+            && (bytes = picoquic_frames_varint_encode(bytes, bytes_max, seq_count)) != NULL) {
+        *is_pure_ack = 0;
+    } else {
+        *more_data = 1;
+        bytes = bytes0;
+    }
+    return bytes;
+}
+
+const uint8_t *picoquic_skip_fc_ping_selector_frame(const uint8_t *bytes, const uint8_t *bytes_max)
+{
+    if ((bytes = picoquic_frames_fixed_skip(bytes, bytes_max, 4 + 1)) != NULL
+            && (bytes = picoquic_frames_varint_skip(bytes, bytes_max)) != NULL) {
+        bytes = picoquic_frames_varint_skip(bytes, bytes_max);
+    }
+
     return bytes;
 }
 
@@ -7239,6 +7294,12 @@ int picoquic_decode_frames(picoquic_cnx_t* cnx, picoquic_path_t * path_x, const 
                         case picoquic_frame_type_fc_key:
                             bytes = picoquic_decode_fc_key_frame(cnx, path_x, bytes, bytes_max);
                             ack_needed = 1;
+                            break;
+                        case picoquic_frame_type_fc_ping:
+                            bytes = picoquic_skip_0len_frame(bytes, bytes_max);
+                            break;
+                        case picoquic_frame_type_fc_ping_selector:
+                            bytes = picoquic_decode_fc_ping_selector_frame(cnx, path_x, bytes, bytes_max, &ack_needed);
                             break;
                         default:
                             /* Not implemented yet! */

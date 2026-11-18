@@ -169,7 +169,9 @@ typedef enum {
     picoquic_frame_type_reset_stream_at = 0x24,
     picoquic_frame_type_fc_announce = 0xf2,
     picoquic_frame_type_fc_state = 0xf4,
-    picoquic_frame_type_fc_key = 0xf5
+    picoquic_frame_type_fc_key = 0xf5,
+    picoquic_frame_type_fc_ping = 0xfa,
+    picoquic_frame_type_fc_ping_selector = 0xfb
 } picoquic_frame_type_enum_t;
 
 #define FRAME_TYPE_QX_TRANSPORT_PARAMETERS 0x3f5153300d0a0d0aull /* Per qmux draft 01 */
@@ -1242,16 +1244,19 @@ typedef struct st_picoquic_fc_flow_t {
 
     picoquic_path_t* path;
     picoquic_fc_flow_id_t flow_id;
-    uint64_t remote_sequence_number;
+    uint8_t remote_sequence_number;
     uint64_t self_sequence_number;
     struct sockaddr source_addr;
     struct sockaddr group_addr;
     uint16_t udp_port;
     uint64_t ack_delay_timer;
+    uint64_t ping_interval;
     uint64_t packet_number;
     uint64_t crypto_algo;
     uint64_t key_len;
     uint8_t* key;
+    uint32_t crypt_addr;
+    uint64_t client_seq;
     int s_ctx_i;
 
     picoquic_fc_state state;

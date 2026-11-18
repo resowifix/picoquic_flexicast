@@ -609,6 +609,25 @@ void picoquic_packet_loop_close_amt_socket(picoquic_amt_socket_ctx_t *samt_ctx)
     }
 }
 
+int64_t picoquic_get_next_amt_wake_delay(picoquic_quic_t *quic, uint64_t current_time,
+        int64_t delay_max)
+{
+    int64_t delay = delay_max;
+    if (quic->current_number_connections > 0) {
+        for (picoquic_cnx_t *cnx = quic->cnx_list; cnx != NULL; cnx = cnx->next_in_table) {
+            if (cnx->is_flexicast_enabled && cnx->nb_flows > 0) {
+                for (int i = 0; i < cnx->nb_flows; i++) {
+                    if (cnx->flows[i]->amt_state == picoquic_fc_multicast)
+                        delay = MIN(delay, cnx->flows[i]->ping_interval * 3000
+                                                   + cnx->flows[i]->time_since_anything
+                                                   - current_time);
+                }
+            }
+        }
+    }
+    return delay;
+}
+
 void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_loop_param_t *param,
         picoquic_socket_ctx_t *s_ctx, int *nb_sockets, picoquic_amt_socket_ctx_t ***samt_ctx,
         int *nb_amt_sockets, int *max_amt_sockets, uint8_t ecn_value, uint64_t current_time)
@@ -647,7 +666,7 @@ void packet_loop_open_flexicast_sockets(picoquic_quic_t *quic, picoquic_packet_l
                                 quic->amt_cxt != NULL
                                 && flow->state == picoquic_fc_cli_listening
                                 && flow->amt_state == picoquic_fc_multicast
-                                && current_time - flow->time_since_anything > 750000
+                                && current_time - flow->time_since_anything > flow->ping_interval * 3000
                                 && !picoquic_packet_loop_open_flexicast_amt_socket(flow,
                                         quic->amt_cxt, samt_ctx, *nb_amt_sockets, max_amt_sockets)
                         ) {
@@ -2747,6 +2766,12 @@ void* picoquic_packet_loop_v3(void* v_ctx)
                 delta_t_qmux = picoquic_get_next_wake_delay(qmux, current_time, delay_max);
                 if (delta_t_qmux < delta_t) {
                     delta_t = delta_t_qmux;
+                }
+            }
+            if (quic->amt_cxt != NULL) {
+                int64_t delta_t_amt = picoquic_get_next_amt_wake_delay(quic, current_time, delay_max);
+                if (delta_t_amt<delta_t) {
+                    delta_t = delta_t_amt;
                 }
             }
             if (options.do_time_check) {
